@@ -92,7 +92,12 @@ export const LIMITS = {
   badgeMessage: 200,
   /** Characters of a name from the gateway kept in Gladys. */
   name: 80,
+  /** States kept out of the budget of the button presses each second (pending states first). */
+  statesReserve: 50,
 };
+
+/** The shape of a token of the gateway (a UUID in practice): no space, no control character. */
+export const TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{8,256}$/;
 
 export const TIMINGS = {
   /** The pending states are sent at this pace. */
@@ -114,6 +119,10 @@ export const TIMINGS = {
   resync: 5 * 60_000,
   /** The loads, scenes and buttons are read again this often (renamed, added). */
   inventory: 30 * 60_000,
+  /** A socket open this long counts as stable: its failures are forgotten. */
+  liveStable: 60_000,
+  /** No message at all on the socket this long: it is opened again (watchdog). */
+  liveSilence: 10 * 60_000,
   /** The live socket is opened again after a loss: this delay, doubled up to the max. */
   liveRetryMin: 5000,
   liveRetryMax: 2 * 60_000,

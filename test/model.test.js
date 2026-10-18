@@ -9,6 +9,7 @@ import {
   BUTTON_STATUS,
   buildModel,
   buttonOf,
+  jobOf,
   levelOf,
   loadOf,
   positionOf,
@@ -54,6 +55,47 @@ test('roles of the loads', () => {
     ['Chauffage', undefined],
     ['Bandeau', 'dimmer'],
   ]);
+});
+
+test('an on/off output is a light or a switch only without any sub-type', () => {
+  const role = (sub_type, kind = 0) =>
+    roleOf(loadOf({ id: 1, type: 'onoff', sub_type, device: '0000133a', channel: 0, kind }));
+  assert.equal(role(''), 'light');
+  assert.equal(role(undefined), 'light');
+  assert.equal(role('', 1), 'switch');
+  for (const variant of ['dto', 'DTO', ' dto', 'dto ', 'impulse', 'minuterie']) {
+    assert.equal(role(variant), 'impulse', JSON.stringify(variant));
+    assert.equal(role(variant, 1), 'impulse', JSON.stringify(variant));
+  }
+  assert.equal(
+    roleOf(loadOf({ id: 1, type: 'motor', sub_type: ' Relay', device: '0000133a', channel: 0 })),
+    'relay',
+  );
+});
+
+test('the slats are a device of their own, only on request', () => {
+  const loads = F.loads().map(loadOf).filter(Boolean);
+  const off = buildModel(idsOf, { loads, serial: F.SERIAL });
+  assert.ok(!off.devices.some((d) => d.external_id.startsWith('ext:x:tilt:')));
+  const on = buildModel(idsOf, { loads, serial: F.SERIAL }, { publishTilt: true });
+  const slats = on.devices.filter((d) => d.external_id.startsWith('ext:x:tilt:'));
+  assert.deepEqual(
+    slats.map((d) => [d.name, d.external_id]),
+    [['Store salon – Lamelles', 'ext:x:tilt:0000155c_0']],
+  );
+  assert.deepEqual(on.loadDevices.get(3), ['ext:x:load:0000155c_0', 'ext:x:tilt:0000155c_0']);
+});
+
+test('a job: the loads it acts on', () => {
+  assert.deepEqual(
+    jobOf({
+      id: 3,
+      target_states: [{ load: 1 }, { load: 'x' }, { load: 7 }],
+      button_ctrl: { event: 'click', button: 'on', loads: [8, -1] },
+    }),
+    [3, new Set([1, 7, 8])],
+  );
+  assert.equal(jobOf({ id: 'a' }), undefined);
 });
 
 test('hostile answers: only known keys, ids checked', () => {
@@ -112,7 +154,7 @@ test('the model: external ids from the physical output, never the load id', () =
   const model = buildModel(idsOf, {
     loads,
     scenes: F.scenes().map(sceneOf).filter(Boolean),
-    jobs: new Set([14]),
+    jobs: new Map(F.jobs().map(jobOf)),
     buttons: F.buttons().map(buttonOf).filter(Boolean),
     rooms: new Map([[1, 'Salon']]),
     serial: F.SERIAL,

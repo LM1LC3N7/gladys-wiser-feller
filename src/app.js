@@ -27,6 +27,7 @@ import {
   buildModel,
   buttonOf,
   emptyModel,
+  jobOf,
   loadOf,
   pressState,
   roleOf,
@@ -104,10 +105,16 @@ export class WiserApp {
     this.liveFailures = 0;
     this.liveOpening = undefined;
     this.liveSince = Infinity;
+    /** when the current socket opened, and when it last said anything */
+    this.liveOpenedAt = undefined;
+    this.lastMessageAt = -Infinity;
     this.running = false;
+    this.unsaved = false;
+    this.timerAt = undefined;
     /** feature id -> last value read, sent when the user creates the device */
     this.lastValues = new Map();
     this.created = new Set();
+    this.createdIds = new Set();
     /** Gladys device id -> device published in this run (a publication never shrinks) */
     this.known = new Map();
     this.publishedDevices = undefined;
@@ -134,11 +141,25 @@ export class WiserApp {
 
   // --- Lifecycle -------------------------------------------------------------
 
-  async start(raw = {}) {
+  async start(raw = {}, { unsaved = false } = {}) {
     this.stop();
     const generation = this.generation;
+    const previousUrl = this.config.url;
     this.raw = { ...(raw ?? {}) };
     this.config = normalizeConfig(raw);
+    this.unsaved = unsaved;
+    if (previousUrl !== this.config.url) {
+      // Another gateway (or none): nothing of the previous one stays published.
+      this.known.clear();
+      this.lastValues.clear();
+      this.states.clear();
+      this.stateSeq.clear();
+      this.unconfirmed.clear();
+      this.impulses.clear();
+      this.model = emptyModel();
+      this.inventory = { loads: [], scenes: [], jobs: undefined, buttons: [], rooms: new Map() };
+      this.inventoryAt = -Infinity;
+    }
     this.refreshCreated();
     this.blocked = undefined;
     // Gladys may have restarted meanwhile (it keeps them in memory only).
@@ -177,8 +198,12 @@ export class WiserApp {
    * again.
    */
   async resume(raw = {}) {
+    if (this.unsaved) {
+      // A claimed token Gladys could not save: keep using it from memory.
+      raw = { ...(raw ?? {}), api_token: this.raw.api_token };
+    }
     if (!this.running || !sameConfig(normalizeConfig(raw), this.config)) {
-      await this.start(raw);
+      await this.start(raw, { unsaved: this.unsaved });
       return;
     }
     this.raw = { ...(raw ?? {}) };
@@ -243,10 +268,17 @@ export class WiserApp {
 
   async connectedStatus() {
     const { offered: loads, scenes, buttons } = this.model.counts;
-    await this.setStatus(
-      true,
-      T.connected({ loads, scenes, buttons }, this.liveState, this.config.pollInterval),
+    const message = T.connected(
+      { loads, scenes, buttons },
+      this.liveState,
+      this.config.pollInterval,
     );
+    if (this.unsaved) {
+      // The new token could not be saved: in memory only, until a restart.
+      message.en = `${message.en} ${T.claim.unsaved.en}`;
+      message.fr = `${message.fr} ${T.claim.unsaved.fr}`;
+    }
+    await this.setStatus(true, message);
   }
 
   warnOnce(key, message) {
@@ -259,8 +291,10 @@ export class WiserApp {
   /** Runs `fn` after `ms` on the main timer, unless the app was restarted or stopped meanwhile. */
   schedule(generation, ms, fn) {
     this.timers.clearTimeout(this.timer);
+    this.timerAt = this.now() + ms;
     this.timer = this.timers.setTimeout(() => {
       this.timer = undefined;
+      this.timerAt = undefined;
       if (this.current(generation)) {
         fn().catch((err) => this.logger.error(`Wiser loop: ${err.message}`));
       }
@@ -332,6 +366,7 @@ export class WiserApp {
     this.timers.clearTimeout(this.liveTimer);
     this.timers.clearTimeout(this.timer);
     this.timer = undefined;
+    this.timerAt = undefined;
     this.lastError = err;
     if (err?.kind === 'auth') {
       // A refused token is never tried again by the integration: the user gets
@@ -400,6 +435,12 @@ export class WiserApp {
       }
     }
     if (this.current(generation) && this.online) {
+      // The socket said nothing at all for 10 minutes: open it again (a gateway
+      // that drops it silently; a quiet house only costs a reopening).
+      const heard = Math.max(this.lastMessageAt, this.liveOpenedAt ?? -Infinity);
+      if (this.liveState === 'live' && this.now() - heard >= TIMINGS.liveSilence) {
+        this.liveLost(generation, 'no message for 10 minutes', { quiet: true });
+      }
       await this.connectedStatus();
       this.scheduleRead(generation);
     }
@@ -454,7 +495,7 @@ export class WiserApp {
     const jobs = await secondary(
       'jobs',
       () => client.jobs(),
-      (list) => new Set(list.map((j) => j?.id).filter((id) => Number.isSafeInteger(id))),
+      (list) => new Map(list.map(jobOf).filter(Boolean)),
     );
     const buttons = await secondary(
       'buttons',
@@ -521,7 +562,7 @@ export class WiserApp {
     this.model = buildModel(
       (type, id) => this.gladys.externalIds(type, id),
       { ...this.inventory, serial: this.info?.serial ?? 'gateway' },
-      { language: this.config.language },
+      { language: this.config.language, publishTilt: this.config.publishTilt },
     );
     for (const [deviceId] of this.transports) {
       if (!this.known.has(deviceId) && !this.model.deviceLoads.has(deviceId)) {
@@ -606,7 +647,12 @@ export class WiserApp {
       WebSocket: this.WebSocket,
       timers: this.timers,
       onMessage: (message) => {
-        if (this.current(generation) && message) {
+        if (!this.current(generation)) {
+          return;
+        }
+        // Any message, even one dropped, proves the socket alive (watchdog).
+        this.lastMessageAt = this.now();
+        if (message) {
           this.onLiveMessage(message);
         }
       },
@@ -630,26 +676,38 @@ export class WiserApp {
         this.live = session;
         this.liveState = 'live';
         this.liveSince = this.now();
+        this.liveOpenedAt = this.now();
         if (this.liveFailures > 0) {
           this.logger.info(`Live updates on again after ${this.liveFailures} failure(s)`);
         } else {
           this.logger.info('Live updates on (µGateway WebSocket)');
         }
-        this.liveFailures = 0;
+        // The failures are forgotten only once the socket stayed open 60 s
+        // (liveFailed): a gateway that accepts then cuts at once keeps its
+        // growing delay.
         this.liveError = undefined;
         await this.connectedStatus();
         await this.publishAllTransports();
-        // The changes between the last read and the socket: read once now.
-        if (!this.reading) {
+        // The changes between the last read and the socket: read now, unless
+        // the last read is more recent than the read interval.
+        const interval = this.config.pollInterval * 1000;
+        if (!this.reading && this.now() - this.readStartedAt >= interval) {
           this.scheduleRead(generation, 0);
+        } else if (!this.reading) {
+          this.scheduleRead(generation, Math.max(0, this.readStartedAt + interval - this.now()));
         }
       })
       .catch((err) => this.liveFailed(generation, err));
   }
 
   /** The watchdog: the socket seems deaf, open it again at once (still 'live'). */
-  liveLost(generation, reason) {
-    this.logger.warn(`µGateway live updates: ${reason}, opening the socket again`);
+  liveLost(generation, reason, { quiet = false } = {}) {
+    const text = `µGateway live updates: ${reason}, opening the socket again`;
+    if (quiet) {
+      this.logger.info(text);
+    } else {
+      this.logger.warn(text);
+    }
     const session = this.live;
     this.live = null;
     session?.close();
@@ -662,6 +720,11 @@ export class WiserApp {
       return;
     }
     const wasDown = this.liveState === 'down';
+    if (this.liveOpenedAt !== undefined && this.now() - this.liveOpenedAt >= TIMINGS.liveStable) {
+      // It stayed open long enough: a new loss starts from the shortest delay.
+      this.liveFailures = 0;
+    }
+    this.liveOpenedAt = undefined;
     this.liveState = 'down';
     this.liveSince = Infinity;
     this.liveError = err;
@@ -681,8 +744,11 @@ export class WiserApp {
       this.liveTimer = undefined;
       this.startLive(generation);
     }, delay);
-    if (!wasDown && !this.reading) {
-      this.scheduleRead(generation, this.config.pollInterval * 1000);
+    // Reads at the interval, never sooner than the next one already planned.
+    const interval = this.config.pollInterval * 1000;
+    const planned = this.timerAt;
+    if (!wasDown && !this.reading && (planned === undefined || planned > this.now() + interval)) {
+      this.scheduleRead(generation, interval);
     }
     await this.connectedStatus();
     await this.publishAllTransports();
@@ -694,6 +760,7 @@ export class WiserApp {
     session?.close();
     this.liveState = state;
     this.liveSince = Infinity;
+    this.liveOpenedAt = undefined;
   }
 
   /** One message of the socket: a state change of a load, or a button press. */
@@ -746,8 +813,7 @@ export class WiserApp {
   }
 
   publishTransportOf(loadId) {
-    const deviceId = this.model.loadDevices.get(loadId);
-    if (deviceId) {
+    for (const deviceId of this.model.loadDevices.get(loadId) ?? []) {
       this.background(this.publishTransport(deviceId));
     }
   }
@@ -787,18 +853,22 @@ export class WiserApp {
 
   // --- Devices created by the user -------------------------------------------------
 
+  /** The ids of the devices created in Gladys (cached, refreshed on their events). */
   createdDevices() {
-    return new Set((this.gladys.devices ?? []).map((d) => d.external_id));
+    return this.createdIds;
   }
 
   refreshCreated() {
-    this.created = new Set(
-      (this.gladys.devices ?? []).flatMap((d) => (d.features ?? []).map((f) => f.external_id)),
-    );
+    const devices = this.gladys.devices ?? [];
+    this.createdIds = new Set(devices.map((d) => d.external_id));
+    this.created = new Set(devices.flatMap((d) => (d.features ?? []).map((f) => f.external_id)));
   }
 
   async deviceCreated(device) {
     this.refreshCreated();
+    if (device?.external_id) {
+      this.createdIds.add(device.external_id);
+    }
     for (const f of device?.features ?? []) {
       this.created.add(f.external_id);
     }
@@ -817,6 +887,10 @@ export class WiserApp {
   async deviceDeleted(device) {
     this.refreshCreated();
     if (device?.external_id) {
+      this.createdIds.delete(device.external_id);
+      for (const f of device.features ?? []) {
+        this.created.delete(f.external_id);
+      }
       this.transports.delete(device.external_id);
       this.publisher.forget(device.external_id);
     }
@@ -931,12 +1005,12 @@ export class WiserApp {
           throw err?.refusal ? this.denied('badValue') : err;
         }
         if (writer.safety === 'impulse') {
-          const last = this.impulses.get(writer.loadId);
+          const last = this.impulses.get(key);
           if (last !== undefined && this.now() - last < TIMINGS.impulseSpacing) {
             throw this.denied('impulseBusy');
           }
         }
-        await this.send(client, writer, call, options, generation);
+        await this.send(client, writer, call, options, generation, key);
       });
     } catch (err) {
       // Gladys shows the value asked for: send the known one again.
@@ -950,15 +1024,20 @@ export class WiserApp {
   }
 
   /**
-   * One request of a command. A refusal before it left says "not sent"; a
-   * failure after it may have left says "sent, without confirmation" and reads
-   * the load again. Never awaits a publication to Gladys.
+   * One request of a command, and what to tell of a failure:
+   *   - refused at the socket, connection refused, no route, timed out before
+   *     connecting: "not sent";
+   *   - a 4xx or an envelope `status: error`: "refused", with the reason;
+   *   - anything after it left (5xx, an answer not understood or too large,
+   *     a reset, a timeout once sent): "sent, without confirmation", the load
+   *     read back and its badge degraded.
+   * Never awaits a publication to Gladys.
    */
-  async send(client, writer, call, options, generation) {
+  async send(client, writer, call, options, generation, key) {
     const loadId = writer.loadId;
     if (writer.safety === 'impulse') {
       // Set before the request: a second impulse is refused even if this one fails.
-      this.impulses.set(loadId, this.now());
+      this.impulses.set(key, this.now());
     }
     try {
       if (call.job !== undefined) {
@@ -969,12 +1048,16 @@ export class WiserApp {
         await client.setTargetState(loadId, call.target, options.send);
       }
     } catch (err) {
-      if (err?.refusal) {
-        // Refused at the socket (too late, option turned off): it never left.
+      if (err?.refusal || err?.sent === false) {
+        // Refused at the socket (too late, option turned off), or the
+        // connection never opened: it never left.
         if (writer.safety === 'impulse') {
-          this.impulses.delete(loadId);
+          this.impulses.delete(key);
         }
-        throw err;
+        if (err?.refusal) {
+          throw err;
+        }
+        throw this.denied('notSent', err.message);
       }
       this.sideError(generation, err);
       if (err?.kind === 'auth') {
@@ -983,17 +1066,19 @@ export class WiserApp {
       if (err?.kind === 'rate') {
         throw this.denied('paused');
       }
-      if (err instanceof WiserError && err.status !== undefined) {
-        // The µGateway answered and refused it.
+      const answered = err instanceof WiserError && err.status !== undefined;
+      if (answered && (err.kind === 'api' || err.kind === 'notfound') && err.status < 500) {
+        // The µGateway answered and refused it (a 4xx, or status: error).
         throw this.denied('refused', err.message);
       }
-      // Network, timeout: the request may have reached the µGateway.
+      // 5xx, format, size, reset, timeout once sent: it may have been done.
       if (loadId !== undefined) {
         this.unconfirmed.add(loadId);
         this.publishTransportOf(loadId);
         this.readBack(loadId, TIMINGS.commandEcho);
+        throw this.denied('unconfirmed');
       }
-      throw this.denied('unconfirmed');
+      throw this.denied('unconfirmedScene');
     }
     if (loadId !== undefined && this.liveState !== 'live') {
       const delays = this.model.motors.has(loadId) ? TIMINGS.motorEchoes : [TIMINGS.commandEcho];
@@ -1066,14 +1151,17 @@ export class WiserApp {
     } finally {
       this.claiming = false;
     }
+    this.store.clearRefusal();
     try {
       await this.gladys.setConfig({ api_token: token });
     } catch (err) {
-      this.logger.warn(`Saving the token failed: ${err.message}`);
+      // The old token is already invalidated by the claim: use the new one
+      // from memory, and say it in the status until it is saved.
+      this.logger.warn(`Saving the token failed: ${err.message}; using it from memory`);
+      this.background(this.start({ ...this.raw, api_token: token }, { unsaved: true }));
       return T.claim.saveFailed;
     }
     this.logger.info('Token received from the µGateway and saved');
-    this.store.clearRefusal();
     this.background(this.start({ ...this.raw, api_token: token }));
     return T.claim.ok;
   }

@@ -10,20 +10,25 @@
 // -----------------------------------------------------------------------------
 
 import http from 'node:http';
-import { API, CLAIM_USER, LIMITS, TIMINGS } from './constants.js';
+import { API, CLAIM_USER, LIMITS, TIMINGS, TOKEN_PATTERN } from './constants.js';
+
+export { TOKEN_PATTERN };
 
 export class WiserError extends Error {
   /**
    * @param {'auth'|'notfound'|'rate'|'api'|'server'|'network'|'timeout'|'http'|'redirect'|'format'|'size'|'nobutton'} kind
    * @param {string} message never a token
-   * @param {{ status?: number, retryAfter?: number }} [details] retryAfter in ms
+   * @param {{ status?: number, retryAfter?: number, sent?: boolean }} [details] retryAfter
+   *   in ms; sent false when the request never left (connection refused, no
+   *   route, timed out before the connection)
    */
-  constructor(kind, message, { status, retryAfter } = {}) {
+  constructor(kind, message, { status, retryAfter, sent } = {}) {
     super(message);
     this.name = 'WiserError';
     this.kind = kind;
     this.status = status;
     this.retryAfter = retryAfter;
+    this.sent = sent;
   }
 }
 
@@ -38,13 +43,13 @@ const NETWORK_REASONS = {
   EPIPE: 'connection closed',
 };
 
-/** A socket error -> WiserError. */
-export function networkError(err) {
+/** A socket error -> WiserError; `sent` tells whether the request had left. */
+export function networkError(err, sent) {
   if (err instanceof WiserError || err?.refusal) {
     return err;
   }
   const reason = NETWORK_REASONS[err?.code] ?? err?.code ?? 'network error';
-  return new WiserError('network', reason);
+  return new WiserError('network', reason, { sent });
 }
 
 /** The text of the gateway, short, without anything that looks like a token. */
@@ -75,7 +80,7 @@ export function retryAfterOf(value, now = Date.now()) {
 }
 
 /** The refusals of the gateway that mean "this token is not (or no longer) valid". */
-const AUTH_MESSAGES = /api is locked|unauthori[sz]ed|invalid token|token/i;
+const AUTH_MESSAGES = /api is locked|unauthori[sz]ed|invalid token/i;
 
 /**
  * The `data` of an answer, or the WiserError it carries.
@@ -95,9 +100,6 @@ export function parseAnswer({ status, headers = {}, body }, token) {
   if (status === 401 || status === 403) {
     throw new WiserError('auth', reason || `token refused (HTTP ${status})`, { status });
   }
-  if (json?.status === 'error' && AUTH_MESSAGES.test(reason)) {
-    throw new WiserError('auth', reason, { status });
-  }
   if (status === 404) {
     throw new WiserError('notfound', reason || 'not found (HTTP 404)', { status });
   }
@@ -111,6 +113,10 @@ export function parseAnswer({ status, headers = {}, body }, token) {
     throw new WiserError('server', reason ? `${reason} (HTTP ${status})` : `HTTP ${status}`, {
       status,
     });
+  }
+  // After 404, 429 and 5xx: only these words mean the token itself is refused.
+  if (json?.status === 'error' && AUTH_MESSAGES.test(reason)) {
+    throw new WiserError('auth', reason, { status });
   }
   if (status >= 400) {
     throw new WiserError('api', reason ? `${reason} (HTTP ${status})` : `HTTP ${status}`, {
@@ -149,6 +155,8 @@ export function httpRequest(
     const target = new URL(url);
     let timer;
     let settled = false;
+    /** whether the request left (its body written to a connected socket) */
+    let sent = false;
     /** The first outcome wins: a destroyed request may still end or fail after it. */
     const settle = (fn, value) => {
       if (!settled) {
@@ -176,14 +184,14 @@ export function httpRequest(
           body: Buffer.concat(chunks).toString('utf8'),
         });
       });
-      res.on('error', (err) => settle(reject, networkError(err)));
+      res.on('error', (err) => settle(reject, networkError(err, true)));
     });
     timer = setTimeout(() => {
       const seconds = Math.max(1, Math.round(timeout / 1000));
-      settle(reject, new WiserError('timeout', `no answer within ${seconds} s`));
+      settle(reject, new WiserError('timeout', `no answer within ${seconds} s`, { sent }));
       req.destroy();
     }, timeout);
-    req.on('error', (err) => settle(reject, networkError(err)));
+    req.on('error', (err) => settle(reject, networkError(err, sent)));
     const send = () => {
       try {
         guard?.();
@@ -192,6 +200,7 @@ export function httpRequest(
         req.destroy();
         return;
       }
+      sent = true;
       req.end(body);
     };
     if (!guard) {
@@ -297,9 +306,6 @@ export function createClient({ url, token = '', request = httpRequest }) {
     },
   };
 }
-
-/** The shape of a token of the gateway (a UUID in practice): no space, no control character. */
-export const TOKEN_PATTERN = /^[A-Za-z0-9._~+/=-]{8,256}$/;
 
 /**
  * Asks the µGateway for a token. Its buttons blink for 30 s: the request

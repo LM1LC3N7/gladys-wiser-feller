@@ -36,4 +36,27 @@ the notes of the version's GitHub Release.
   a 429 pauses every path; both kept in `/data`.
 - Transport badges, a "Test the connection" button, English and French texts.
 
+### Changed
+
+- The slats of venetian blinds are a device of their own ("<blind> – Slats"),
+  published only with the new "Slats of venetian blinds as their own device"
+  option (off by default): a "close all blinds" of a voice assistant may
+  target it too.
+- Command failures told precisely: "refused" for a refusal of the µGateway,
+  "sent, without confirmation" (read back) once the request may have left,
+  "not sent" when the µGateway could not be reached.
+- A socket accepted then cut at once keeps growing retry delays, and the
+  states are never read more than once per interval; a socket silent for 10
+  minutes is opened again.
+- The button presses no longer starve the states of the lights and blinds.
+
+### Security
+
+- Any sub-type of an on/off output other than none (written in any case or
+  with spaces) makes it an impulse output, read-only unless allowed.
+- A Wiser scene that drives an impulse output is guarded like it (option,
+  read again before sending, 3 s apart).
+- A token that does not look like one is never sent; only explicit refusals
+  of the µGateway count as a refused token.
+
 [Unreleased]: https://github.com/LM1LC3N7/gladys-wiser-feller/commits/main

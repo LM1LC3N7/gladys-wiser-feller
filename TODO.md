@@ -59,6 +59,15 @@ up to date at the end of every milestone.
 - Motor positions during a move (Home Assistant notes they are not updated
   while moving); the `learning` flag of a motor not calibrated.
 - Generation A gateways (API 5): `/api/buttons` and `/api/rooms` answers.
+- An output set as impulse or timer in the eSetup app after its first
+  configuration: does its `sub_type` really become `dto` in `/api/loads`
+  (and when: at once, after a restart of the gateway)?
+- A tilt (`target_state {tilt}`) sent while the blind is moving: does it stop
+  the move, wait for its end, or get lost?
+- The awning level: does `level` 0 mean retracted or deployed (here, as for
+  the other motors, 0 = "open" = Gladys 100 %)?
+- The answer of the claim and of a command when the gateway is busy (5xx):
+  told "sent, without confirmation".
 
 ## Decisions
 
@@ -115,14 +124,29 @@ up to date at the end of every milestone.
   the turn-on behaviour set on the device is kept; brightness by
   `target_state {bri: n*100}`.
 - **Blinds** (brief: never a switch): `motor` kind 1 venetian blind →
-  `shutter/state` + `shutter/position` + a second `shutter/position` named
-  "Slats" (the core has no tilt type for shutters); kind 2 roller / kind 0
+  `shutter/state` + `shutter/position`; its slats (the core has no tilt type
+  for shutters) are a device of their own, "<blind> – Slats"
+  (`ext:<selector>:tilt:<device>_<channel>`, one `shutter/position` feature
+  `tilt`), published only when the `publish_tilt` option is on (off by
+  default; review I4, coordinator decision): a "close all blinds" of Google,
+  Alexa, HomeKit or MCP may target it too, the docs say so; kind 2 roller / kind 0
   motor → shutter; kind 3 awning → `curtain`; sub-type `relay` → `shutter/state`
   only. Position 100 = open (Gladys and zigbee2mqtt convention) = Wiser level 0;
   tilt 0–9 ↔ 0–100 %. State OPEN → level 0, CLOSE → level 10000, STOP →
   `ctrl stop click`. Read: `moving` up/down/stop → OPEN/CLOSE/STOP; no position
   while `flags.learning` is set. No unit (the core lists none for these
   categories).
+- **Sub-types** (review I2): `type` and `sub_type` are trimmed and lower-cased;
+  an `onoff` output is a light or a switch only with an empty or absent
+  sub-type, any other one (`dto`, `DTO`, ` dto`, `impulse`, unknown) is an
+  impulse output. An output re-set as impulse after its creation: Scan, then
+  delete and add the device again (docs); until then its light commands are
+  refused (no writer for them).
+- **Scenes touching an impulse output** (review I3): a scene whose job
+  (`target_states[].load`, `button_ctrl.loads`) drives an impulse output gets
+  `safety: 'impulse'`: refused without the option, the option read again in
+  the guard, 3 s between two runs. When `/api/jobs` cannot be read, every
+  scene is guarded as soon as one impulse output exists.
 - **Impulse outputs** (`onoff` sub-type `dto`, impulse or staircase timer;
   telling them apart needs `GET /devices/<id>/config`, which puts the device
   in configuration mode: not done): never a switch nor a light (a garage door
@@ -151,20 +175,43 @@ up to date at the end of every milestone.
   baseline was read after the socket opened, finding `bri` or `level`
   changed for a load no message touched since the read began, reopens the
   socket at once (staying "live"). Socket retried 5 s doubling to 2 min;
-  without it the states are read at `poll_interval`.
+  without it the states are read at `poll_interval`. Review I1: the failure
+  count is forgotten only after a socket stayed open 60 s, so a gateway that
+  accepts then cuts at once keeps growing delays (test: reopened at 5, 16, 37,
+  78, 159, 280, 401, 522 s over 10 min); at its opening the states are read
+  only when the last read is older than `poll_interval`, and a loss never
+  brings a planned read sooner (test: 20 reads in 10 min at 30 s). Minor 1: no
+  message at all for 10 minutes (any message counts, even one dropped) → the
+  socket is opened again (logged at info: a quiet house only costs a
+  reopening). Minor 2: undici's WebSocket has no `maxPayload` option; a
+  message over 64 KB is dropped after receipt (`LIMITS.eventBytes`), undici
+  itself bounds frames.
 - **Secondary endpoints** (lesson): rooms, scenes, jobs and buttons may fail
   (404 on older firmware, 5xx) without blocking the outputs; the last list
   read is kept; only a refused token or a 429 stops.
 - **Commands**: serialized per output (or scene); refused unless sent within
   3.5 s (guard run again when the request leaves its socket, 1 s more for the
-  request). A refusal before leaving is "not sent"; a gateway refusal is told
-  with its reason; a network failure or timeout is "sent, without
-  confirmation" with a read back and a degraded badge. The ack never awaits a
+  request; "the command waited too long in the queue of this output").
+  Failures (review I5): refused at the socket, connection refused, no route,
+  or a timeout before the connection (the client marks `sent: false`) → "not
+  sent"; a 4xx or an envelope `status: error` → "refused" with its reason; a
+  5xx, an answer not understood or too large, a reset or a timeout once sent
+  → "sent, without confirmation", read back and degraded badge (for a scene,
+  without "state read again", minor 5). The ack never awaits a
   publication to Gladys (a test hangs every publication). Values validated
   strictly (null, '' and out-of-range refused). Without live updates, a load
   is read back 1.5 s after a command, a motor at 1.5, 10, 30 and 70 s.
 - **Rates**: states through `publishChangedStates` (30-min heartbeat) within
-  250 states a minute.
+  250 states a minute; each second up to 50 slots are kept for the pending
+  states before the button presses (minor 8).
+- **Second review round (2026-10-18)**, minor points: the auth words of the
+  gateway restricted to "api is locked", "unauthorized", "invalid token", and
+  read only after 404, 429 and 5xx (minor 3); the token of the configuration
+  must match `TOKEN_PATTERN`, else a clear status and nothing is sent (minor
+  4); a claimed token that `setConfig` could not save is used from memory,
+  kept across reconnections to Gladys, and told in the status (minor 6); the
+  ids of the created devices cached, refreshed on their events (minor 9); a
+  new address clears what was published for the previous gateway (minor 11).
 - **Version 0.1.0 set by hand** in `package.json`, `package-lock.json` and the
   manifest (with the `docker_image` tag
   `ghcr.io/lm1lc3n7/gladys-wiser-feller:0.1.0`): the one-time exception to

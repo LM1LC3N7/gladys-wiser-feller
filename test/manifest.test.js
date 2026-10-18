@@ -136,6 +136,10 @@ test('the configuration matches the code', () => {
   );
   assert.equal(fields.allow_impulse_outputs.type, 'boolean');
   assert.equal(fields.allow_impulse_outputs.default, false, 'impulse outputs off by default');
+  assert.equal(fields.publish_tilt.default, false, 'the slats device off by default');
+  for (const lang of ['en', 'fr']) {
+    assert.match(fields.publish_tilt.description[lang], /Google, Alexa, HomeKit/);
+  }
   const intro = fields.intro;
   assert.equal(intro.type, 'section');
   for (const lang of ['en', 'fr']) {

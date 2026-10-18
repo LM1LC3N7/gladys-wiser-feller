@@ -96,8 +96,8 @@ const CONFIG_ERRORS = {
     fr: `Pas encore de jeton : enregistrez l'adresse, puis ${GET_TOKEN.fr}.`,
   },
   'bad-token': {
-    en: `The token contains spaces: ${GET_TOKEN.en}.`,
-    fr: `Le jeton contient des espaces : ${GET_TOKEN.fr}.`,
+    en: `The token in the configuration does not look like a token of the µGateway (spaces or unexpected characters): it is not sent. ${GET_TOKEN.en}.`,
+    fr: `Le jeton de la configuration n'a pas la forme d'un jeton du µGateway (espaces ou caractères inattendus) : il n'est pas envoyé. Pour en obtenir un, ${GET_TOKEN.fr}.`,
   },
 };
 
@@ -160,8 +160,16 @@ export const T = {
       fr: 'Le µGateway demande de ralentir : commande non envoyée, réessayez dans un moment.',
     },
     tooLate: {
-      en: 'The µGateway took too long: command not sent.',
-      fr: 'Le µGateway a mis trop de temps : commande non envoyée.',
+      en: 'The command waited too long in the queue of this output: not sent.',
+      fr: 'La commande a attendu trop longtemps dans la file de la sortie : non envoyée.',
+    },
+    notSent: (reason) => ({
+      en: `The µGateway could not be reached (${reason}): command not sent.`,
+      fr: `Le µGateway n'a pas pu être joint (${reason}) : commande non envoyée.`,
+    }),
+    unconfirmedScene: {
+      en: 'Command sent to the µGateway, without confirmation.',
+      fr: 'Commande envoyée au µGateway, sans confirmation.',
     },
     badValue: {
       en: 'Value not accepted for this feature: command not sent.',
@@ -198,8 +206,12 @@ export const T = {
       fr: 'Une demande de jeton attend déjà un appui sur le µGateway.',
     },
     saveFailed: {
-      en: 'The µGateway gave a token but Gladys could not save it: try again.',
-      fr: "Le µGateway a donné un jeton mais Gladys n'a pas pu l'enregistrer : réessayez.",
+      en: 'The µGateway gave a token but Gladys could not save it: it is used from memory until the integration restarts. Click "Get the token" again to save one.',
+      fr: "Le µGateway a donné un jeton mais Gladys n'a pas pu l'enregistrer : il est utilisé en mémoire jusqu'au redémarrage de l'intégration. Cliquez à nouveau sur « Obtenir le jeton » pour en enregistrer un.",
+    },
+    unsaved: {
+      en: 'The token in use could not be saved: it is lost at the next restart, get a new one.',
+      fr: "Le jeton utilisé n'a pas pu être enregistré : il sera perdu au prochain redémarrage, obtenez-en un nouveau.",
     },
     failed: (err) => ({
       en: `No token: ${err?.message ?? 'unknown error'}. Check the address of the µGateway and click again.`,

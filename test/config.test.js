@@ -33,6 +33,14 @@ test('the configuration, normalized', () => {
     normalizeConfig({ gateway_address: '192.168.1.20', api_token: 'a b' }).error,
     'bad-token',
   );
+  assert.equal(
+    normalizeConfig({ gateway_address: '192.168.1.20', api_token: 'short' }).error,
+    'bad-token',
+  );
+  assert.equal(
+    normalizeConfig({ gateway_address: '192.168.1.20', api_token: 'abc\u0000defgh' }).error,
+    'bad-token',
+  );
   const bounded = normalizeConfig({
     ...DEFAULTS,
     gateway_address: '1.2.3.4',

@@ -16,23 +16,35 @@ AG.
 
 ## Ce que vous obtenez
 
-| Sortie Wiser                               | Dans Gladys                                                                 |
-| ------------------------------------------ | --------------------------------------------------------------------------- |
-| Interrupteur (lumière)                     | une lumière : allumage                                                      |
-| Variateur (LED, DALI)                      | une lumière : allumage et luminosité (0-100 %)                              |
-| Interrupteur réglé en « prise » dans l'app | un interrupteur : marche/arrêt                                              |
-| Store à lamelles                           | un volet : ouvrir, fermer, arrêter, position, et **lamelles** (0-100 %)     |
-| Volet roulant, moteur                      | un volet : ouvrir, fermer, arrêter, position                                |
-| Store banne                                | un rideau : ouvrir, fermer, arrêter, position                               |
-| Moteur à relais simple                     | un volet : ouvrir, fermer, arrêter (sans position)                          |
-| Sortie à impulsion ou minuterie d'escalier | un état en lecture seule et un bouton « Activer », **désactivé par défaut** |
-| Scène Wiser                                | un bouton « Lancer » : la scène s'exécute comme depuis l'app                |
-| Bouton enregistré sur le µGateway          | un bouton : chaque appui arrive à vos scènes Gladys                         |
+| Sortie Wiser                               | Dans Gladys                                                                                    |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Interrupteur (lumière)                     | une lumière : allumage                                                                         |
+| Variateur (LED, DALI)                      | une lumière : allumage et luminosité (0-100 %)                                                 |
+| Interrupteur réglé en « prise » dans l'app | un interrupteur : marche/arrêt                                                                 |
+| Store à lamelles                           | un volet : ouvrir, fermer, arrêter, position ; les **lamelles** en appareil séparé, sur option |
+| Volet roulant, moteur                      | un volet : ouvrir, fermer, arrêter, position                                                   |
+| Store banne                                | un rideau : ouvrir, fermer, arrêter, position                                                  |
+| Moteur à relais simple                     | un volet : ouvrir, fermer, arrêter (sans position)                                             |
+| Sortie à impulsion ou minuterie d'escalier | un état en lecture seule et un bouton « Activer », **désactivé par défaut**                    |
+| Scène Wiser                                | un bouton « Lancer » : la scène s'exécute comme depuis l'app                                   |
+| Bouton enregistré sur le µGateway          | un bouton : chaque appui arrive à vos scènes Gladys                                            |
 
 Les stores et volets ne sont **jamais** des interrupteurs : une scène « tout
 éteindre » ne les ferme pas. La position suit la convention de Gladys :
 100 % = ouvert, 0 % = fermé. Pendant qu'un moteur apprend ses fins de course
 (calibrage), sa position est inconnue et n'est pas envoyée.
+
+Une sortie marche/arrêt n'est une lumière ou un interrupteur que si elle n'a
+**aucun sous-type** : une sortie réglée en impulsion, en minuterie ou avec tout
+autre sous-type devient une sortie à impulsion (lecture seule, bouton derrière
+l'option). Si vous réglez une sortie en impulsion **après** l'avoir ajoutée
+(dans l'app eSetup), cliquez sur **Scanner** dans l'onglet Découverte, puis
+**supprimez l'appareil et ajoutez-le à nouveau** : ses anciennes commandes de
+lumière sont refusées d'ici là.
+
+Une **scène Wiser** qui commande une sortie à impulsion est protégée comme
+elle : refusée tant que l'option n'est pas activée (relue juste avant l'envoi),
+et deux lancements espacés d'au moins 3 secondes.
 
 Les appareils sont nommés d'après le nom de la sortie et sa pièce dans l'app
 Wiser (« Plafonnier (Salon) »). Leur identifiant suit l'adresse physique de la
@@ -94,7 +106,17 @@ noms, pièces et scènes viennent de lui.
   ouvre-porte de garage ou une gâche. Tant que l'option est désactivée, son
   bouton « Activer » est refusé, et l'option est relue juste avant chaque
   envoi. Deux impulsions sont espacées d'au moins 3 secondes.
+- **Lamelles des stores en appareil séparé** (désactivé par défaut) : chaque
+  store à lamelles propose aussi un appareil « <store> – Lamelles » (0-100 %).
+  Attention : un « fermer tous les stores » de Google, Alexa, HomeKit ou d'un
+  assistant (MCP) peut aussi viser cet appareil.
 - **Langue des noms des fonctionnalités** : français ou anglais.
+
+Si le WebSocket ne dit plus rien pendant 10 minutes, Gladys le rouvre (un
+µGateway qui le coupe sans prévenir) ; dans une maison calme, cela ne coûte
+qu'une reconnexion. Une socket qui s'ouvre puis se coupe aussitôt garde un délai
+de reprise croissant (jusqu'à 2 minutes), et les états ne sont jamais lus plus
+d'une fois par intervalle.
 
 ## Sécurité et vie privée
 
@@ -106,8 +128,10 @@ noms, pièces et scènes viennent de lui.
   ou cliquiez sur **Tester la connexion**.
 - Une demande « 429 » du µGateway met tout en pause (1 minute à 6 heures).
 - Les commandes partent une par une par sortie, dans les 3,5 s, ou sont
-  refusées. Une commande qui a pu partir sans réponse est annoncée « envoyée,
-  sans confirmation » et la sortie est relue.
+  refusées. Une commande qui a pu partir sans réponse (erreur 5xx, réponse
+  illisible, délai dépassé après l'envoi) est annoncée « envoyée, sans
+  confirmation » et la sortie est relue ; un refus du µGateway (4xx) est dit
+  « refusée » ; un µGateway injoignable avant l'envoi donne « non envoyée ».
 
 ## Dépannage
 

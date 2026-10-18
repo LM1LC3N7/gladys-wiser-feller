@@ -42,6 +42,15 @@ test('the envelope and the errors by kind', () => {
   assert.equal(kindOf(answer(200, '<html>hello</html>')), 'format');
   assert.equal(kindOf(answer(200, { status: 'error', message: 'no button pressed' })), 'nobutton');
   assert.equal(kindOf(answer(200, { hello: 1 })), 'format');
+  // Only after 404, 429 and 5xx, and only these words, mean a refused token.
+  assert.equal(kindOf(answer(500, { status: 'error', message: 'api is locked' })), 'server');
+  assert.equal(kindOf(answer(404, { status: 'error', message: 'unauthorized user' })), 'notfound');
+  assert.equal(kindOf(answer(200, { status: 'error', message: 'invalid token' })), 'auth');
+  assert.equal(
+    kindOf(answer(200, { status: 'error', message: 'token of scene 3 unknown' })),
+    'api',
+    'a mere "token" in a message is not a refused token',
+  );
   try {
     parseAnswer(answer(429, {}, { 'retry-after': '30' }));
   } catch (err) {
@@ -79,6 +88,21 @@ test('the token goes in the header, to the address typed only; a redirection is 
     (err) => err.kind === 'redirect' && !err.message.includes('192.0.2.1'),
   );
   assert.equal(sim.requests.length, count + 1, 'one request, not followed');
+});
+
+test('a connection refused never sent the command', async () => {
+  const sim = await gatewayServer();
+  const url = sim.url;
+  await sim.close(); // nothing listens on this port any more
+  const client = createClient({ url, token: TOKEN });
+  try {
+    await assert.rejects(
+      client.ctrl(1, 'on', 'click', { guard: () => {}, timeout: 2000 }),
+      (err) => err.kind === 'network' && err.sent === false,
+    );
+  } finally {
+    client.close();
+  }
 });
 
 test('a command is not sent once its guard refuses', async (t) => {

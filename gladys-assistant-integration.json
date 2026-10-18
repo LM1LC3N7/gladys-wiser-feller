@@ -21,8 +21,8 @@
         "fr": "Votre installation Wiser by Feller dans Gladys"
       },
       "description": {
-        "en": "The outputs of your Wiser µGateway are offered in the Discovery tab: lights (on/off, brightness), switched outlets, blinds and shutters (position, slats of venetian blinds), awnings, your Wiser scenes as buttons, and the presses of the buttons registered on the µGateway. Everything stays on your local network, through the official API of the µGateway, with live updates. Impulse and staircase-timer outputs stay read-only until you allow them below. Never tested with a real µGateway yet. Unofficial, not affiliated with Feller AG.",
-        "fr": "Les sorties de votre µGateway Wiser sont proposées dans l'onglet Découverte : lumières (allumage, luminosité), prises commandées, stores et volets (position, lamelles des stores à lamelles), stores bannes, vos scènes Wiser en boutons, et les appuis sur les boutons enregistrés sur le µGateway. Tout reste sur votre réseau local, par l'API officielle du µGateway, avec des mises à jour en direct. Les sorties à impulsion et minuterie restent en lecture seule tant que vous ne les autorisez pas ci-dessous. Jamais testée avec un vrai µGateway pour l'instant. Non officiel, sans lien avec Feller AG."
+        "en": "The outputs of your Wiser µGateway are offered in the Discovery tab: lights (on/off, brightness), switched outlets, blinds and shutters (position; slats of venetian blinds on request), awnings, your Wiser scenes as buttons, and the presses of the buttons registered on the µGateway. Everything stays on your local network, through the official API of the µGateway, with live updates. Impulse and staircase-timer outputs stay read-only until you allow them below. Never tested with a real µGateway yet. Unofficial, not affiliated with Feller AG.",
+        "fr": "Les sorties de votre µGateway Wiser sont proposées dans l'onglet Découverte : lumières (allumage, luminosité), prises commandées, stores et volets (position ; lamelles des stores à lamelles sur demande), stores bannes, vos scènes Wiser en boutons, et les appuis sur les boutons enregistrés sur le µGateway. Tout reste sur votre réseau local, par l'API officielle du µGateway, avec des mises à jour en direct. Les sorties à impulsion et minuterie restent en lecture seule tant que vous ne les autorisez pas ci-dessous. Jamais testée avec un vrai µGateway pour l'instant. Non officiel, sans lien avec Feller AG."
       },
       "links": [
         {
@@ -143,6 +143,20 @@
       "description": {
         "en": "Off by default: impulse and staircase-timer outputs (a garage door opener is often wired to one) are read-only. On, their \"Activate\" button sends a press, from the dashboard and the scenes.",
         "fr": "Désactivé par défaut : les sorties à impulsion et minuterie (un ouvre-porte de garage y est souvent branché) sont en lecture seule. Activé, leur bouton « Activer » envoie un appui, depuis le tableau de bord et les scènes."
+      },
+      "required": false,
+      "default": false
+    },
+    {
+      "key": "publish_tilt",
+      "type": "boolean",
+      "label": {
+        "en": "Slats of venetian blinds as their own device",
+        "fr": "Lamelles des stores en appareil séparé"
+      },
+      "description": {
+        "en": "Off by default. On, each venetian blind also offers a \"<blind> – Slats\" device in Discovery. Beware: a \"close all blinds\" of Google, Alexa, HomeKit or an assistant (MCP) may target it too.",
+        "fr": "Désactivé par défaut. Activé, chaque store à lamelles propose aussi un appareil « <store> – Lamelles » dans la Découverte. Attention : un « fermer tous les stores » de Google, Alexa, HomeKit ou d'un assistant (MCP) peut aussi le viser."
       },
       "required": false,
       "default": false

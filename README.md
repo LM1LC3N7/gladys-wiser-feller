@@ -48,9 +48,11 @@ Gladys ⇄ SDK ⇄ src/handlers.js ⇄ src/app.js (WiserApp) ⇄ src/wiser.js �
   closed, `tilt` 0–9), stop by `ctrl stop`, scenes by
   `GET /api/jobs/<job>/trigger`. One at a time per output, sent within 3.5 s or
   refused; the ack never waits for a publication to Gladys. Impulse and
-  staircase-timer outputs (sub-type `dto`) are never a switch nor a light, and
-  their "Activate" button is refused unless allowed (the option is read again
-  when the request leaves).
+  staircase-timer outputs (any `onoff` sub-type, `dto` in practice) are never
+  a switch nor a light, and their "Activate" button is refused unless allowed
+  (the option is read again when the request leaves); so is a Wiser scene that
+  drives one. The slats of venetian blinds are a separate device, only with
+  the `publish_tilt` option (a "close all blinds" may target it).
 - **Failures**: µGateway unreachable → status message and `unreachable`
   badges, reconnection after 5 s doubling up to 60 s; token refused → stop,
   kept in `/data` across restarts, never tried again until a new token or the

@@ -130,8 +130,9 @@ export function loadOf(raw) {
   }
   return {
     id: raw.id,
-    type: typeof raw.type === 'string' ? raw.type : '',
-    subType: typeof raw.sub_type === 'string' ? raw.sub_type : '',
+    type: typeof raw.type === 'string' ? raw.type.trim().toLowerCase() : '',
+    // Normalized: " DTO" is "dto". Absent is "".
+    subType: typeof raw.sub_type === 'string' ? raw.sub_type.trim().toLowerCase() : '',
     device,
     channel,
     name: text(raw.name),
@@ -146,6 +147,26 @@ export function sceneOf(raw) {
     return undefined;
   }
   return { id: raw.id, job: raw.job, name: text(raw.name) };
+}
+
+/** A job of GET /api/jobs: [id, the load ids it acts on (target states, button control)]. */
+export function jobOf(raw) {
+  if (!raw || typeof raw !== 'object' || !isId(raw.id)) {
+    return undefined;
+  }
+  const loads = new Set();
+  for (const target of Array.isArray(raw.target_states) ? raw.target_states : []) {
+    if (isId(target?.load)) {
+      loads.add(target.load);
+    }
+  }
+  const ctrl = raw.button_ctrl;
+  for (const id of Array.isArray(ctrl?.loads) ? ctrl.loads : []) {
+    if (isId(id)) {
+      loads.add(id);
+    }
+  }
+  return [raw.id, loads];
 }
 
 /** A REGISTERED button of GET /api/buttons (only those send their presses). */
@@ -183,7 +204,10 @@ export function roomOf(raw) {
 export function roleOf(load) {
   switch (load.type) {
     case LOAD.ONOFF:
-      if (load.subType === LOAD.DTO) {
+      // A light or a switch only with no sub-type at all: "dto" (impulse,
+      // staircase timer) and any sub-type unknown today are impulse outputs,
+      // read-only with their button behind the option.
+      if (load.subType !== '') {
         return 'impulse';
       }
       return load.kind === LOAD.KIND_SWITCH ? 'switch' : 'light';
@@ -373,14 +397,8 @@ function featuresOf(role, language) {
     case 'awning':
       return positioned(C.CURTAIN);
     case 'blind':
-      return [
-        ...positioned(C.SHUTTER),
-        feature('tilt', language, C.SHUTTER, T.SHUTTER.POSITION, {
-          max: 100,
-          write: WRITE.tilt,
-          read: READ.tilt,
-        }),
-      ];
+      // The slats are a device of their own (option publish_tilt), see buildModel.
+      return positioned(C.SHUTTER);
     default:
       return [];
   }
@@ -400,7 +418,7 @@ export function emptyModel() {
     readers: new Map(),
     /** feature id -> { write, loadId?, job?, role, safety? } */
     writers: new Map(),
-    /** load id -> Gladys device id */
+    /** load id -> [Gladys device ids] (a venetian blind and its slats) */
     loadDevices: new Map(),
     /** Gladys device id -> load id */
     deviceLoads: new Map(),
@@ -415,13 +433,18 @@ export function emptyModel() {
 /**
  * @param {(type: string, id: string) => { device: string, feature: (key: string) => string }} idsOf
  *   gladys.externalIds
- * @param {{ loads: object[], scenes?: object[], jobs?: Set<number>, buttons?: object[],
+ * @param {{ loads: object[], scenes?: object[], jobs?: Map<number, Set<number>>, buttons?: object[],
  *   rooms?: Map<number, string>, serial: string }} inventory records of the functions above
- * @param {{ language?: 'fr'|'en' }} [options]
+ *   (jobs: job id -> the load ids it acts on; undefined when not read)
+ * @param {{ language?: 'fr'|'en', publishTilt?: boolean }} [options]
  */
-export function buildModel(idsOf, inventory, { language = 'fr' } = {}) {
+export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = false } = {}) {
   const model = emptyModel();
   const rooms = inventory.rooms ?? new Map();
+  /** every impulse output, offered or not (the scenes touching one are guarded) */
+  const impulses = new Set(
+    (inventory.loads ?? []).filter((l) => roleOf(l) === 'impulse').map((l) => l.id),
+  );
   const full = () => {
     if (model.devices.length >= LIMITS.devices) {
       model.counts.overflow += 1;
@@ -468,15 +491,14 @@ export function buildModel(idsOf, inventory, { language = 'fr' } = {}) {
       })),
     });
     model.counts.offered += 1;
-    model.loadDevices.set(load.id, ids.device);
+    model.loadDevices.set(load.id, [ids.device]);
     model.deviceLoads.set(ids.device, load.id);
     if (['shutter', 'blind', 'awning', 'relay'].includes(role)) {
       model.motors.add(load.id);
     }
-    model.readers.set(
-      load.id,
-      features.filter((f) => f.read).map((f) => ({ featureId: ids.feature(f.key), read: f.read })),
-    );
+    const readers = features
+      .filter((f) => f.read)
+      .map((f) => ({ featureId: ids.feature(f.key), read: f.read }));
     for (const f of features.filter((x) => x.write)) {
       model.writers.set(ids.feature(f.key), {
         write: f.write,
@@ -485,6 +507,37 @@ export function buildModel(idsOf, inventory, { language = 'fr' } = {}) {
         safety: role === 'impulse' ? 'impulse' : undefined,
       });
     }
+    if (role === 'blind' && publishTilt && !full()) {
+      // The slats as their own device (review I4): a "close all blinds" of a
+      // voice assistant may target it too, so it is published on request only.
+      const tiltIds = idsOf('tilt', platformId);
+      const tilt = feature('tilt', language, C.SHUTTER, T.SHUTTER.POSITION, {
+        max: 100,
+        write: WRITE.tilt,
+        read: READ.tilt,
+      });
+      model.devices.push({
+        name: `${name} – ${label('tilt', language)}`.slice(0, 100),
+        external_id: tiltIds.device,
+        should_poll: false,
+        params: params([
+          { name: 'WISER_LOAD_ID', value: load.id },
+          { name: 'WISER_DEVICE', value: load.device },
+          { name: 'WISER_CHANNEL', value: load.channel },
+        ]),
+        features: [
+          (({ key, write: _w, read: _r, ...rest }) => ({
+            ...rest,
+            external_id: tiltIds.feature(key),
+          }))(tilt),
+        ],
+      });
+      model.loadDevices.get(load.id).push(tiltIds.device);
+      model.deviceLoads.set(tiltIds.device, load.id);
+      readers.push({ featureId: tiltIds.feature('tilt'), read: tilt.read });
+      model.writers.set(tiltIds.feature('tilt'), { write: tilt.write, loadId: load.id, role });
+    }
+    model.readers.set(load.id, readers);
   }
 
   const scenesSeen = new Set();
@@ -519,6 +572,12 @@ export function buildModel(idsOf, inventory, { language = 'fr' } = {}) {
       ],
     });
     model.counts.scenes += 1;
+    // A scene that drives an impulse output is guarded like it (review I3);
+    // when the jobs could not be read, any impulse output may be in it.
+    const targets = inventory.jobs?.get(scene.job);
+    const touchesImpulse = inventory.jobs
+      ? [...(targets ?? [])].some((id) => impulses.has(id))
+      : impulses.size > 0;
     model.writers.set(ids.feature('run'), {
       write(value) {
         if (numberIn(value, PRESSED, PRESSED) !== PRESSED) {
@@ -528,6 +587,7 @@ export function buildModel(idsOf, inventory, { language = 'fr' } = {}) {
       },
       role: 'scene',
       sceneId: scene.id,
+      safety: touchesImpulse ? 'impulse' : undefined,
     });
   }
 

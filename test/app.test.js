@@ -108,8 +108,12 @@ test('the outputs, scenes and buttons become Gladys devices, their values sent o
     18,
     '8160 closed -> 18 % open',
   );
-  assert.equal(gladys.fake.lastState(`${blind.external_id}:tilt`), 33, 'tilt 3 of 9');
   assert.equal(gladys.fake.lastState(`${blind.external_id}:state`), COVER_STATE.STOP);
+  assert.equal(
+    deviceNamed(gladys, 'Store salon (Salon) – Lamelles'),
+    undefined,
+    'slats off by default',
+  );
   assert.equal(
     gladys.fake.lastState(`${awning.external_id}:position`),
     undefined,
@@ -125,20 +129,35 @@ test('the outputs, scenes and buttons become Gladys devices, their values sent o
 });
 
 test('blinds are shutters or curtains, never switches; impulse outputs are neither switches nor lights', async (t) => {
-  const { gladys } = await setup(t);
+  const { gladys } = await setup(t, {
+    prepare: (g) => {
+      // Sub-types written otherwise, or unknown today: all impulse outputs.
+      const variant = (id, name, sub_type) => ({
+        id,
+        name,
+        type: 'onoff',
+        sub_type,
+        device: `000020${id}`,
+        channel: 0,
+        unused: false,
+        kind: 0,
+      });
+      g.loads.push(variant(21, 'Minuterie', 'DTO'), variant(22, 'Gâche', ' dto'));
+      g.loads.push(variant(23, 'Impulsion', 'impulse'));
+    },
+  });
   const categories = (name) =>
     deviceNamed(gladys, name).features.map((f) => `${f.category}/${f.type}`);
-  assert.deepEqual(categories('Store salon (Salon)'), [
-    'shutter/state',
-    'shutter/position',
-    'shutter/position',
-  ]);
+  assert.deepEqual(categories('Store salon (Salon)'), ['shutter/state', 'shutter/position']);
   assert.deepEqual(categories('Volet (Chambre)'), ['shutter/state', 'shutter/position']);
   assert.deepEqual(categories('Store banne'), ['curtain/state', 'curtain/position']);
   assert.deepEqual(categories('Velux'), ['shutter/state']);
   assert.deepEqual(categories('Prise terrasse'), ['switch/binary']);
   assert.deepEqual(categories('Porte garage'), ['unknown/binary', 'button/push']);
   assert.deepEqual(categories('Bandeau'), ['light/binary', 'light/brightness']);
+  assert.deepEqual(categories('Minuterie'), ['unknown/binary', 'button/push']);
+  assert.deepEqual(categories('Gâche'), ['unknown/binary', 'button/push']);
+  assert.deepEqual(categories('Impulsion'), ['unknown/binary', 'button/push']);
   for (const device of gladys.fake.discoveredDevices) {
     for (const f of device.features) {
       if (f.category === 'switch' || f.category === 'light') {
@@ -191,10 +210,18 @@ test('live messages reach Gladys at once; every press is an event; foreign and h
 });
 
 test('commands: lights by a button press, brightness, blinds, slats, stop, scenes', async (t) => {
-  const { gladys, gw } = await setup(t);
+  const { gladys, gw, tick } = await setup(t, { config: { ...CONFIG, publish_tilt: true } });
   const lamp = await created(gladys, 'Plafonnier (Salon)');
   const spots = await created(gladys, 'Spots (Salon)');
   const blind = await created(gladys, 'Store salon (Salon)');
+  const slats = await created(gladys, 'Store salon (Salon) – Lamelles');
+  assert.equal(slats.external_id, 'ext:test-integration:tilt:0000155c_0');
+  assert.deepEqual(
+    slats.features.map((f) => `${f.category}/${f.type}`),
+    ['shutter/position'],
+  );
+  await tick(TIMINGS.flushInterval);
+  assert.equal(gladys.fake.lastState(`${slats.external_id}:tilt`), 33, 'tilt 3 of 9');
   const velux = await created(gladys, 'Velux');
   const scene = await created(gladys, 'Scène Wiser Absent');
   const ok = async (device, key, value) => {
@@ -207,7 +234,7 @@ test('commands: lights by a button press, brightness, blinds, slats, stop, scene
   assert.deepEqual((await ok(spots, 'brightness', 30)).args, [2, { bri: 3000 }]);
   assert.deepEqual((await ok(blind, 'position', 100)).args, [3, { level: 0 }], '100 % open');
   assert.deepEqual((await ok(blind, 'position', 25)).args, [3, { level: 7500 }]);
-  assert.deepEqual((await ok(blind, 'tilt', 100)).args, [3, { tilt: 9 }]);
+  assert.deepEqual((await ok(slats, 'tilt', 100)).args, [3, { tilt: 9 }]);
   assert.deepEqual((await ok(blind, 'state', COVER_STATE.CLOSE)).args, [3, { level: 10000 }]);
   assert.deepEqual((await ok(blind, 'state', COVER_STATE.OPEN)).args, [3, { level: 0 }]);
   assert.deepEqual((await ok(blind, 'state', COVER_STATE.STOP)).args, [3, 'stop', 'click']);
@@ -440,7 +467,7 @@ test('a device published again never loses a feature it was created with', async
   const { gladys } = await setup(t, { devices });
   const blind = gladys.fake.discoveredDevices.find((d) => d.external_id === devices[0].external_id);
   const keys = blind.features.map((f) => f.external_id.split(':').at(-1));
-  assert.deepEqual(keys.sort(), ['legacy', 'position', 'state', 'tilt']);
+  assert.deepEqual(keys.sort(), ['legacy', 'position', 'state']);
 });
 
 test('without live updates the states are read at the interval, and after a command', async (t) => {
@@ -481,10 +508,208 @@ test('the watchdog: a read that finds a change no message told opens the socket 
   assert.equal(gw.liveOpens, 1);
   await tick(TIMINGS.resync); // a baseline read after the socket opened
   assert.equal(gw.liveOpens, 1, 'nothing missed');
+  gw.emit({ sensor: { id: 1, value: 21 } }); // a message dropped, but the socket is alive
   gw.states.set(1, { bri: 0 });
   await tick(TIMINGS.resync);
   assert.equal(gw.liveOpens, 2);
   assert.equal(app.liveState, 'live');
+});
+
+test('a socket silent for 10 minutes is opened again', async (t) => {
+  const { gw, tick } = await setup(t);
+  await tick(TIMINGS.resync);
+  assert.equal(gw.liveOpens, 1);
+  await tick(TIMINGS.resync);
+  assert.equal(gw.liveOpens, 2, '10 minutes without any message');
+});
+
+test('a gateway that accepts the socket then cuts it at once: spaced retries, one read per interval', async (t) => {
+  const { gw, tick, app } = await setup(t, {
+    prepare: (g) => {
+      const open = g.openLive;
+      g.openLive = async (options) => {
+        const session = await open(options);
+        // Cut 1 s after it opened, every time.
+        setTimeout(() => {
+          if (!session.closed) {
+            session.closed = true;
+            session.onClose('connection closed');
+          }
+        }, 1000);
+        return session;
+      };
+    },
+  });
+  const opens = [];
+  const reads = gw.callsOf('loadsState').length;
+  let last = gw.liveOpens;
+  for (let s = 0; s < 600; s += 1) {
+    await tick(1000);
+    if (gw.liveOpens !== last) {
+      opens.push(s);
+      last = gw.liveOpens;
+    }
+  }
+  assert.ok(opens.length <= 10, `${opens.length} reopenings in 10 min`);
+  const gaps = opens.slice(1).map((s, i) => s - opens[i]);
+  assert.ok(
+    gaps.every((g, i) => i === 0 || g >= gaps[i - 1]),
+    `growing delays: ${gaps.join(', ')}`,
+  );
+  assert.ok(gaps.at(-1) >= 100, 'up to 2 minutes');
+  const done = gw.callsOf('loadsState').length - reads;
+  t.diagnostic(`reopened at ${opens.join(', ')} s; ${done} reads`);
+  assert.ok(opens.length >= 5, 'the socket is tried again');
+  assert.ok(done <= 600 / 30 + 1, `${done} reads in 10 min, at most one per 30 s`);
+  assert.ok(app.liveFailures >= opens.length, 'failures not forgotten for a short-lived socket');
+});
+
+test('command failures: refused, sent without confirmation, or not sent', async (t) => {
+  const { gladys, gw, app } = await setup(t);
+  const spots = await created(gladys, 'Spots (Salon)');
+  const scene = await created(gladys, 'Scène Wiser Absent');
+  const brightness = featureOf(spots, 'brightness');
+  const cases = [
+    [new WiserError('server', 'HTTP 500', { status: 500 }), T.denied.unconfirmed.fr, true],
+    [
+      new WiserError('format', 'not an answer of a Wiser µGateway', { status: 200 }),
+      T.denied.unconfirmed.fr,
+      true,
+    ],
+    [new WiserError('size', 'answer too large'), T.denied.unconfirmed.fr, true],
+    [new WiserError('network', 'connection reset', { sent: true }), T.denied.unconfirmed.fr, true],
+    [
+      new WiserError('network', 'connection refused', { sent: false }),
+      T.denied.notSent('connection refused').fr,
+      false,
+    ],
+    [
+      new WiserError('network', 'host unreachable', { sent: false }),
+      T.denied.notSent('host unreachable').fr,
+      false,
+    ],
+    [
+      new WiserError('timeout', 'no answer within 4 s', { sent: false }),
+      T.denied.notSent('no answer within 4 s').fr,
+      false,
+    ],
+    [
+      new WiserError('api', 'bad request (HTTP 400)', { status: 400 }),
+      T.denied.refused('bad request (HTTP 400)').fr,
+      false,
+    ],
+    [
+      new WiserError('api', 'value out of range', { status: 200 }),
+      T.denied.refused('value out of range').fr,
+      false,
+    ],
+  ];
+  for (const [error, message, unconfirmed] of cases) {
+    app.unconfirmed.clear();
+    gw.failures.set('setTargetState', error);
+    const ack = await gladys.fake.setValue(spots, brightness, 40);
+    assert.equal(ack.error, message, error.message);
+    assert.equal(app.unconfirmed.has(2), unconfirmed, error.message);
+  }
+  gw.failures.set('triggerJob', new WiserError('server', 'HTTP 503', { status: 503 }));
+  const ack = await gladys.fake.setValue(scene, featureOf(scene, 'run'), 1);
+  assert.equal(ack.error, T.denied.unconfirmedScene.fr, 'a scene has no state to read again');
+});
+
+test('a Wiser scene that drives an impulse output is guarded like it', async (t) => {
+  const { gladys, gw, app, tick } = await setup(t, {
+    prepare: (g) => {
+      g.scenes.push({ id: 17, job: 20, name: 'Garage', kind: 1, type: 0, sceneButtons: [] });
+      g.jobs.push({ id: 20, target_states: [{ load: 7, bri: 10000 }] });
+    },
+  });
+  const garage = await created(gladys, 'Scène Wiser Garage');
+  const away = await created(gladys, 'Scène Wiser Absent');
+  const run = featureOf(garage, 'run');
+  let ack = await gladys.fake.setValue(garage, run, 1);
+  assert.equal(ack.error, T.denied.impulseOff.fr);
+  ack = await gladys.fake.setValue(away, featureOf(away, 'run'), 1);
+  assert.equal(ack.success, true, 'a scene without impulse output is not guarded');
+
+  app.config = { ...app.config, allowImpulse: true };
+  ack = await gladys.fake.setValue(garage, run, 1);
+  assert.equal(ack.success, true, ack.error);
+  ack = await gladys.fake.setValue(garage, run, 1);
+  assert.equal(ack.error, T.denied.impulseBusy.fr);
+
+  await tick(TIMINGS.impulseSpacing);
+  let release;
+  gw.gates.set('triggerJob', new Promise((resolve) => (release = resolve)));
+  const pending = gladys.fake.setValue(garage, run, 1);
+  await settle();
+  app.config = { ...app.config, allowImpulse: false };
+  release();
+  ack = await pending;
+  assert.equal(ack.error, T.denied.impulseOff.fr, 'the option read again when the request leaves');
+  assert.equal(gw.callsOf('triggerJob').filter((c) => c.args[0] === 20).length, 1);
+});
+
+test('a token that does not look like one is never sent', async (t) => {
+  const { gladys, gw } = await setup(t, {
+    config: { gateway_address: '192.168.1.20', api_token: 'abc def\nghi' },
+  });
+  assert.equal(gw.calls.length, 0);
+  assert.equal(gladys.fake.connectionStatus.message.fr, T.configError('bad-token').fr);
+});
+
+test('a claimed token Gladys cannot save is used from memory, and the status says so', async (t) => {
+  const { gladys, gw, app, tick } = await setup(t, { claim: async () => NEW_TOKEN });
+  gw.tokens.add(NEW_TOKEN);
+  gladys.setConfig = async () => {
+    throw new Error('HTTP 500');
+  };
+  const answer = await gladys.fake.action(ACTIONS.CLAIM, {});
+  assert.equal(answer.data.message.fr, T.claim.saveFailed.fr);
+  await settle();
+  await tick(0);
+  assert.equal(app.online, true);
+  assert.equal(gw.clients.at(-1).token, NEW_TOKEN);
+  assert.match(gladys.fake.connectionStatus.message.fr, /n'a pas pu être enregistré/);
+  // A reconnection to Gladys keeps the token in memory.
+  await gladys.disconnect();
+  await gladys.connect();
+  await settle();
+  assert.equal(app.config.token, NEW_TOKEN);
+});
+
+test('another address: nothing of the previous gateway stays published', async (t) => {
+  const { gladys, app } = await setup(t);
+  assert.equal(gladys.fake.discoveredDevices.length, OFFERED);
+  await app.configUpdated({ ...CONFIG, gateway_address: '192.168.1.21' });
+  await settle();
+  assert.equal(app.known.size, OFFERED, 'the new gateway (same fake) publishes its own');
+  await app.configUpdated({ ...CONFIG, gateway_address: '' });
+  assert.equal(app.known.size, 0);
+});
+
+test('the publisher keeps a share of the budget for the states during a burst of presses', async () => {
+  const sent = { states: 0, events: 0 };
+  const gladys = {
+    publishStates: async (list) => {
+      sent.events += list.length;
+    },
+    publishChangedStates: async (list) => {
+      sent.states += list.length;
+      return { count: list.length };
+    },
+  };
+  const { StatePublisher } = await import('../src/publisher.js');
+  const publisher = new StatePublisher({ gladys, logger: captureLogger(), budget: 100 });
+  publisher.configure({ intervalSeconds: 0 });
+  for (let i = 0; i < 300; i += 1) {
+    publisher.pushEvent('ext:x:button:1:press', { state: 1 });
+  }
+  for (let i = 0; i < 30; i += 1) {
+    publisher.push(`ext:x:load:${i}:on`, { state: 1 });
+  }
+  await publisher.flush();
+  assert.equal(sent.states, 30, 'every pending state sent');
+  assert.equal(sent.events, 70);
 });
 
 test('the test button: counts, and lifts a refusal when the token is accepted again', async (t) => {

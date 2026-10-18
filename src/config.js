@@ -2,7 +2,7 @@
 // The configuration of the manifest `config_schema`, normalized.
 // -----------------------------------------------------------------------------
 
-import { IMPORT_USERS, LANGUAGES, POLL_INTERVAL } from './constants.js';
+import { IMPORT_USERS, LANGUAGES, POLL_INTERVAL, TOKEN_PATTERN } from './constants.js';
 
 /** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
 export const DEFAULTS = {
@@ -13,6 +13,7 @@ export const DEFAULTS = {
   poll_interval: POLL_INTERVAL.default,
   language: 'fr',
   allow_impulse_outputs: false,
+  publish_tilt: false,
 };
 
 /**
@@ -89,7 +90,8 @@ export function normalizeConfig(raw = {}) {
   if (!error && token === '') {
     error = 'no-token';
   }
-  if (!error && /[\s\r\n]/.test(token)) {
+  if (!error && !TOKEN_PATTERN.test(token)) {
+    // Never sent: a clear status, and no retry until the configuration changes.
     error = 'bad-token';
   }
   return {
@@ -104,5 +106,8 @@ export function normalizeConfig(raw = {}) {
     // Impulse and staircase-timer outputs stay read-only unless allowed (a
     // garage door opener is often wired to an impulse output).
     allowImpulse: bool(c.allow_impulse_outputs, false),
+    // The slats of venetian blinds as their own device, off by default: a
+    // "close all blinds" of a voice assistant may target it too.
+    publishTilt: bool(c.publish_tilt, false),
   };
 }

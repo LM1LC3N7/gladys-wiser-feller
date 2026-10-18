@@ -103,9 +103,13 @@ export class StatePublisher {
     this.window = this.window.filter((t) => now - t < 60_000);
     let room = this.budget - this.window.length;
     let sent = 0;
-    if (room > 0 && this.events.length > 0) {
+    // A share of the budget is kept for the pending states: a burst of presses
+    // never starves the lights and blinds.
+    const reserve = Math.min(this.pending.size, LIMITS.statesReserve);
+    const eventRoom = room - reserve;
+    if (eventRoom > 0 && this.events.length > 0) {
       // publishStates, not publishChangedStates: equal values are distinct presses.
-      const events = this.events.splice(0, Math.min(room, 100));
+      const events = this.events.splice(0, Math.min(eventRoom, 100));
       try {
         await this.gladys.publishStates(events);
       } catch (err) {

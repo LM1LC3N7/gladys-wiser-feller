@@ -16,23 +16,34 @@ with Feller AG.
 
 ## What you get
 
-| Wiser output                      | In Gladys                                                       |
-| --------------------------------- | --------------------------------------------------------------- |
-| Switch (light)                    | a light: on/off                                                 |
-| Dimmer (LED, DALI)                | a light: on/off and brightness (0-100 %)                        |
-| Switch set as "outlet" in the app | a switch: on/off                                                |
-| Venetian blind                    | a shutter: open, close, stop, position, and **slats** (0-100 %) |
-| Roller shutter, motor             | a shutter: open, close, stop, position                          |
-| Awning                            | a curtain: open, close, stop, position                          |
-| Plain relay motor                 | a shutter: open, close, stop (no position)                      |
-| Impulse or staircase-timer output | a read-only state and an "Activate" button, **off by default**  |
-| Wiser scene                       | a "Run" button: the scene runs as from the app                  |
-| Button registered on the µGateway | a button: every press reaches your Gladys scenes                |
+| Wiser output                      | In Gladys                                                                             |
+| --------------------------------- | ------------------------------------------------------------------------------------- |
+| Switch (light)                    | a light: on/off                                                                       |
+| Dimmer (LED, DALI)                | a light: on/off and brightness (0-100 %)                                              |
+| Switch set as "outlet" in the app | a switch: on/off                                                                      |
+| Venetian blind                    | a shutter: open, close, stop, position; the **slats** as their own device, on request |
+| Roller shutter, motor             | a shutter: open, close, stop, position                                                |
+| Awning                            | a curtain: open, close, stop, position                                                |
+| Plain relay motor                 | a shutter: open, close, stop (no position)                                            |
+| Impulse or staircase-timer output | a read-only state and an "Activate" button, **off by default**                        |
+| Wiser scene                       | a "Run" button: the scene runs as from the app                                        |
+| Button registered on the µGateway | a button: every press reaches your Gladys scenes                                      |
 
 Blinds and shutters are **never** switches: a "turn everything off" scene does
 not close them. The position follows the Gladys convention: 100 % = open, 0 %
 = closed. While a motor learns its end positions (calibration), its position
 is unknown and not sent.
+
+An on/off output is a light or a switch only when it has **no sub-type at
+all**: an output set as impulse, timer or with any other sub-type becomes an
+impulse output (read-only, its button behind the option). If you set an output
+as impulse **after** adding it (in the eSetup app), click **Scan** in the
+Discovery tab, then **delete the device and add it again**: its old light
+commands are refused until then.
+
+A **Wiser scene** that drives an impulse output is guarded like it: refused
+while the option is off (read again just before sending), and two runs at
+least 3 seconds apart.
 
 Devices are named after the output and its room in the Wiser app ("Ceiling
 (Living room)"). Their id follows the physical address of the output (module
@@ -89,7 +100,17 @@ default): names, rooms and scenes come from it.
   strike. While the option is off, its "Activate" button is refused, and the
   option is read again just before each request. Two impulses are at least 3
   seconds apart.
+- **Slats of venetian blinds as their own device** (off by default): each
+  venetian blind also offers a "<blind> – Slats" device (0-100 %). Beware: a
+  "close all blinds" of Google, Alexa, HomeKit or an assistant (MCP) may
+  target this device too.
 - **Language of the feature names**: French or English.
+
+If the WebSocket says nothing for 10 minutes, Gladys opens it again (a
+µGateway that drops it silently); in a quiet house this only costs a
+reconnection. A socket that opens then drops at once keeps a growing retry
+delay (up to 2 minutes), and the states are never read more than once per
+interval.
 
 ## Security and privacy
 
@@ -101,8 +122,10 @@ default): names, rooms and scenes come from it.
   connection**.
 - A "429" of the µGateway pauses everything (1 minute to 6 hours).
 - Commands leave one at a time per output, within 3.5 s, or are refused. A
-  command that may have left without an answer is told "sent, without
-  confirmation" and the output is read again.
+  command that may have left without an answer (a 5xx, an answer not
+  understood, a timeout once sent) is told "sent, without confirmation" and
+  the output is read again; a refusal of the µGateway (4xx) is told
+  "refused"; a µGateway unreachable before sending gives "not sent".
 
 ## Troubleshooting
 
