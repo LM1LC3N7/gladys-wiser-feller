@@ -94,6 +94,8 @@ export const LIMITS = {
   name: 80,
   /** States kept out of the budget of the button presses each second (pending states first). */
   statesReserve: 50,
+  /** Presses always given this many slots when the budget allows (a flood of states). */
+  eventsReserve: 10,
 };
 
 /** The shape of a token of the gateway (a UUID in practice): no space, no control character. */

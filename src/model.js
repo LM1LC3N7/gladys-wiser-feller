@@ -149,7 +149,11 @@ export function sceneOf(raw) {
   return { id: raw.id, job: raw.job, name: text(raw.name) };
 }
 
-/** A job of GET /api/jobs: [id, the load ids it acts on (target states, button control)]. */
+/**
+ * A job of GET /api/jobs: [id, { loads, scripts }]: the load ids it acts on
+ * (target states, button control), and whether it runs scripts (which may
+ * drive any output).
+ */
 export function jobOf(raw) {
   if (!raw || typeof raw !== 'object' || !isId(raw.id)) {
     return undefined;
@@ -166,7 +170,8 @@ export function jobOf(raw) {
       loads.add(id);
     }
   }
-  return [raw.id, loads];
+  const scripts = Array.isArray(raw.scripts) && raw.scripts.length > 0;
+  return [raw.id, { loads, scripts }];
 }
 
 /** A REGISTERED button of GET /api/buttons (only those send their presses). */
@@ -572,12 +577,15 @@ export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = fa
       ],
     });
     model.counts.scenes += 1;
-    // A scene that drives an impulse output is guarded like it (review I3);
-    // when the jobs could not be read, any impulse output may be in it.
-    const targets = inventory.jobs?.get(scene.job);
-    const touchesImpulse = inventory.jobs
-      ? [...(targets ?? [])].some((id) => impulses.has(id))
-      : impulses.size > 0;
+    // A scene that drives an impulse output is guarded like it, and shares
+    // its 3 s spacing (review I3 and round 2); when the jobs could not be
+    // read, or the job runs scripts, any impulse output may be in it.
+    const job = inventory.jobs?.get(scene.job);
+    const impulseLoads =
+      !inventory.jobs || job?.scripts
+        ? [...impulses]
+        : [...(job?.loads ?? [])].filter((id) => impulses.has(id));
+    const touchesImpulse = impulseLoads.length > 0;
     model.writers.set(ids.feature('run'), {
       write(value) {
         if (numberIn(value, PRESSED, PRESSED) !== PRESSED) {
@@ -588,6 +596,7 @@ export function buildModel(idsOf, inventory, { language = 'fr', publishTilt = fa
       role: 'scene',
       sceneId: scene.id,
       safety: touchesImpulse ? 'impulse' : undefined,
+      impulseLoads,
     });
   }
 

@@ -58,5 +58,11 @@ the notes of the version's GitHub Release.
   read again before sending, 3 s apart).
 - A token that does not look like one is never sent; only explicit refusals
   of the µGateway count as a refused token.
+- An impulse output and the Wiser scenes that drive it share the 3 s spacing:
+  a scene and a direct impulse can no longer leave a few ms apart. Scenes
+  running scripts are guarded as soon as an impulse output exists.
+- After a change of address, the Discovery is emptied at once; the presses
+  keep a share of the state budget; an unsaved claimed token survives a save
+  of the form that still holds the old one.
 
 [Unreleased]: https://github.com/LM1LC3N7/gladys-wiser-feller/commits/main

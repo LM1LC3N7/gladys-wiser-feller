@@ -105,8 +105,9 @@ export class StatePublisher {
     let sent = 0;
     // A share of the budget is kept for the pending states: a burst of presses
     // never starves the lights and blinds.
+    // and a small share for the presses: a flood of states never starves them.
     const reserve = Math.min(this.pending.size, LIMITS.statesReserve);
-    const eventRoom = room - reserve;
+    const eventRoom = Math.max(Math.min(room, LIMITS.eventsReserve), room - reserve);
     if (eventRoom > 0 && this.events.length > 0) {
       // publishStates, not publishChangedStates: equal values are distinct presses.
       const events = this.events.splice(0, Math.min(eventRoom, 100));

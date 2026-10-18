@@ -161,6 +161,10 @@ export class WiserApp {
       this.inventoryAt = -Infinity;
     }
     this.refreshCreated();
+    if (previousUrl !== this.config.url && previousUrl !== undefined) {
+      // Drop the previous gateway's devices from the Discovery at once.
+      await this.publishDevices({ force: true });
+    }
     this.blocked = undefined;
     // Gladys may have restarted meanwhile (it keeps them in memory only).
     this.lastStatus = undefined;
@@ -225,6 +229,14 @@ export class WiserApp {
   /** The configuration changed: start again with it. */
   async configUpdated(raw = {}) {
     this.logger.info('Configuration updated: reconnecting to the µGateway');
+    const stored = String(raw?.api_token ?? '').trim();
+    if (this.unsaved && stored === this.staleToken) {
+      // A claimed token that could not be saved: the form still holds the
+      // old one, already invalidated by the claim. Keep the one in memory.
+      await this.start({ ...raw, api_token: this.raw.api_token }, { unsaved: true });
+      return;
+    }
+    this.staleToken = undefined;
     await this.start(raw);
   }
 
@@ -938,6 +950,14 @@ export class WiserApp {
     return run;
   }
 
+  /** The keys of the 3 s spacing of a guarded command: itself, and the impulse outputs it drives. */
+  impulseKeys(writer, key) {
+    if (writer.safety !== 'impulse') {
+      return [];
+    }
+    return [...new Set([key, ...(writer.impulseLoads ?? [])])];
+  }
+
   /** Refuses an impulse while its option is off (checked again when the request leaves). */
   checkAllowed(writer) {
     if (writer.safety === 'impulse' && !this.config.allowImpulse) {
@@ -1004,13 +1024,17 @@ export class WiserApp {
         } catch (err) {
           throw err?.refusal ? this.denied('badValue') : err;
         }
-        if (writer.safety === 'impulse') {
-          const last = this.impulses.get(key);
+        // The spacing is shared by an impulse output and every scene that
+        // drives it: a scene then a direct impulse (or the reverse) a few ms
+        // apart is refused. Keys: the output's load id, the scene's key.
+        const spaced = this.impulseKeys(writer, key);
+        for (const k of spaced) {
+          const last = this.impulses.get(k);
           if (last !== undefined && this.now() - last < TIMINGS.impulseSpacing) {
             throw this.denied('impulseBusy');
           }
         }
-        await this.send(client, writer, call, options, generation, key);
+        await this.send(client, writer, call, options, generation, spaced);
       });
     } catch (err) {
       // Gladys shows the value asked for: send the known one again.
@@ -1033,11 +1057,11 @@ export class WiserApp {
    *     read back and its badge degraded.
    * Never awaits a publication to Gladys.
    */
-  async send(client, writer, call, options, generation, key) {
+  async send(client, writer, call, options, generation, spaced = []) {
     const loadId = writer.loadId;
-    if (writer.safety === 'impulse') {
-      // Set before the request: a second impulse is refused even if this one fails.
-      this.impulses.set(key, this.now());
+    // Set before the request: a second impulse is refused even if this one fails.
+    for (const k of spaced) {
+      this.impulses.set(k, this.now());
     }
     try {
       if (call.job !== undefined) {
@@ -1051,8 +1075,8 @@ export class WiserApp {
       if (err?.refusal || err?.sent === false) {
         // Refused at the socket (too late, option turned off), or the
         // connection never opened: it never left.
-        if (writer.safety === 'impulse') {
-          this.impulses.delete(key);
+        for (const k of spaced) {
+          this.impulses.delete(k);
         }
         if (err?.refusal) {
           throw err;
@@ -1158,6 +1182,7 @@ export class WiserApp {
       // The old token is already invalidated by the claim: use the new one
       // from memory, and say it in the status until it is saved.
       this.logger.warn(`Saving the token failed: ${err.message}; using it from memory`);
+      this.staleToken = String(this.raw.api_token ?? '').trim();
       this.background(this.start({ ...this.raw, api_token: token }, { unsaved: true }));
       return T.claim.saveFailed;
     }

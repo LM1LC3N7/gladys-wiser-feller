@@ -93,8 +93,10 @@ test('a job: the loads it acts on', () => {
       target_states: [{ load: 1 }, { load: 'x' }, { load: 7 }],
       button_ctrl: { event: 'click', button: 'on', loads: [8, -1] },
     }),
-    [3, new Set([1, 7, 8])],
+    [3, { loads: new Set([1, 7, 8]), scripts: false }],
   );
+  assert.equal(jobOf({ id: 4, scripts: ['garage.py'] })[1].scripts, true);
+  assert.equal(jobOf({ id: 4, scripts: [] })[1].scripts, false);
   assert.equal(jobOf({ id: 'a' }), undefined);
 });
 

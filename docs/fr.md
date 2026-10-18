@@ -44,7 +44,9 @@ lumière sont refusées d'ici là.
 
 Une **scène Wiser** qui commande une sortie à impulsion est protégée comme
 elle : refusée tant que l'option n'est pas activée (relue juste avant l'envoi),
-et deux lancements espacés d'au moins 3 secondes.
+et au moins 3 secondes entre deux impulsions de la même sortie, qu'elles
+viennent de la scène ou du bouton « Activer ». Une scène qui lance des scripts
+est protégée de même dès qu'une sortie à impulsion existe.
 
 Les appareils sont nommés d'après le nom de la sortie et sa pièce dans l'app
 Wiser (« Plafonnier (Salon) »). Leur identifiant suit l'adresse physique de la

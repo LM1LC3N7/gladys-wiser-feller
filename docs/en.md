@@ -42,8 +42,10 @@ Discovery tab, then **delete the device and add it again**: its old light
 commands are refused until then.
 
 A **Wiser scene** that drives an impulse output is guarded like it: refused
-while the option is off (read again just before sending), and two runs at
-least 3 seconds apart.
+while the option is off (read again just before sending), and at least 3
+seconds between two impulses of the same output, whether they come from the
+scene or from the "Activate" button. A scene that runs scripts is guarded the
+same way as soon as an impulse output exists.
 
 Devices are named after the output and its room in the Wiser app ("Ceiling
 (Living room)"). Their id follows the physical address of the output (module

@@ -649,6 +649,69 @@ test('a Wiser scene that drives an impulse output is guarded like it', async (t)
   assert.equal(gw.callsOf('triggerJob').filter((c) => c.args[0] === 20).length, 1);
 });
 
+test('an impulse output and a scene that drives it share the 3 s spacing, both ways', async (t) => {
+  const { gladys, gw, app, tick } = await setup(t, {
+    config: { ...CONFIG, allow_impulse_outputs: true },
+    prepare: (g) => {
+      g.scenes.push({ id: 17, job: 20, name: 'Garage', kind: 1, type: 0, sceneButtons: [] });
+      g.jobs.push({ id: 20, target_states: [{ load: 7, bri: 10000 }] });
+    },
+  });
+  assert.equal(app.config.allowImpulse, true);
+  const scene = await created(gladys, 'Scène Wiser Garage');
+  const garage = await created(gladys, 'Porte garage');
+  const run = featureOf(scene, 'run');
+  const impulse = featureOf(garage, 'impulse');
+
+  // A scene, then a direct impulse a few ms later (both sent at once).
+  const [first, second] = await Promise.all([
+    gladys.fake.setValue(scene, run, 1),
+    gladys.fake.setValue(garage, impulse, 1),
+  ]);
+  assert.equal(first.success, true, first.error);
+  assert.equal(second.error, T.denied.impulseBusy.fr);
+  assert.equal(gw.callsOf('ctrl').length, 0);
+
+  // The reverse: a direct impulse, then the scene.
+  await tick(TIMINGS.impulseSpacing);
+  const [direct, viaScene] = await Promise.all([
+    gladys.fake.setValue(garage, impulse, 1),
+    gladys.fake.setValue(scene, run, 1),
+  ]);
+  assert.equal(direct.success, true, direct.error);
+  assert.equal(viaScene.error, T.denied.impulseBusy.fr);
+  assert.equal(gw.callsOf('triggerJob').length, 1);
+  assert.equal(gw.callsOf('ctrl').length, 1);
+});
+
+test('scenes with scripts, or when the jobs cannot be read, are guarded as soon as an impulse output exists', async (t) => {
+  const { gladys } = await setup(t, {
+    prepare: (g) => {
+      g.scenes.push({ id: 18, job: 21, name: 'Script', kind: 1, type: 0, sceneButtons: [] });
+      g.jobs.push({ id: 21, target_states: [], scripts: ['ouvrir.py'] });
+    },
+  });
+  const scripted = await created(gladys, 'Scène Wiser Script');
+  const away = await created(gladys, 'Scène Wiser Absent');
+  let ack = await gladys.fake.setValue(scripted, featureOf(scripted, 'run'), 1);
+  assert.equal(ack.error, T.denied.impulseOff.fr);
+  ack = await gladys.fake.setValue(away, featureOf(away, 'run'), 1);
+  assert.equal(ack.success, true, ack.error);
+});
+
+test('jobs not readable: every scene shares the spacing of every impulse output', async (t) => {
+  const { gladys, app } = await setup(t, {
+    prepare: (g) =>
+      g.failures.set('jobs', new WiserError('notfound', 'not found', { status: 404 })),
+  });
+  const writer = [...app.model.writers.values()].find((w) => w.role === 'scene');
+  assert.equal(writer.safety, 'impulse');
+  assert.deepEqual(writer.impulseLoads, [7]);
+  const away = await created(gladys, 'Scène Wiser Absent');
+  const ack = await gladys.fake.setValue(away, featureOf(away, 'run'), 1);
+  assert.equal(ack.error, T.denied.impulseOff.fr);
+});
+
 test('a token that does not look like one is never sent', async (t) => {
   const { gladys, gw } = await setup(t, {
     config: { gateway_address: '192.168.1.20', api_token: 'abc def\nghi' },
@@ -675,6 +738,13 @@ test('a claimed token Gladys cannot save is used from memory, and the status say
   await gladys.connect();
   await settle();
   assert.equal(app.config.token, NEW_TOKEN);
+  // A save of the form still holding the old (invalidated) token keeps it too.
+  await gladys.fake.configUpdated({ ...CONFIG, poll_interval: 40 });
+  assert.equal(app.config.token, NEW_TOKEN);
+  assert.equal(app.config.pollInterval, 40);
+  // A token typed by the user wins.
+  await gladys.fake.configUpdated({ ...CONFIG, api_token: 'typed-token-1234' });
+  assert.equal(app.config.token, 'typed-token-1234');
 });
 
 test('another address: nothing of the previous gateway stays published', async (t) => {
@@ -685,6 +755,7 @@ test('another address: nothing of the previous gateway stays published', async (
   assert.equal(app.known.size, OFFERED, 'the new gateway (same fake) publishes its own');
   await app.configUpdated({ ...CONFIG, gateway_address: '' });
   assert.equal(app.known.size, 0);
+  assert.deepEqual(gladys.fake.discoveredDevices, [], 'the empty list published at once');
 });
 
 test('the publisher keeps a share of the budget for the states during a burst of presses', async () => {
@@ -710,6 +781,19 @@ test('the publisher keeps a share of the budget for the states during a burst of
   await publisher.flush();
   assert.equal(sent.states, 30, 'every pending state sent');
   assert.equal(sent.events, 70);
+
+  // The reverse: a flood of states still leaves a few slots to the presses.
+  const small = new StatePublisher({ gladys, logger: captureLogger(), budget: 30 });
+  small.configure({ intervalSeconds: 0 });
+  sent.states = 0;
+  sent.events = 0;
+  for (let i = 0; i < 100; i += 1) {
+    small.push(`ext:x:load:${i}:on`, { state: 1 });
+    small.pushEvent('ext:x:button:1:press', { state: 1 });
+  }
+  await small.flush();
+  assert.equal(sent.events, 10, 'the presses keep their share');
+  assert.equal(sent.states, 20);
 });
 
 test('the test button: counts, and lifts a refusal when the token is accepted again', async (t) => {

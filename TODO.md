@@ -145,8 +145,11 @@ up to date at the end of every milestone.
 - **Scenes touching an impulse output** (review I3): a scene whose job
   (`target_states[].load`, `button_ctrl.loads`) drives an impulse output gets
   `safety: 'impulse'`: refused without the option, the option read again in
-  the guard, 3 s between two runs. When `/api/jobs` cannot be read, every
-  scene is guarded as soon as one impulse output exists.
+  the guard. Its writer lists the impulse outputs it drives (`impulseLoads`):
+  the 3 s spacing is shared by the scene and those outputs (checked and set
+  in the same synchronous step, so a scene and a direct impulse a few ms
+  apart cannot both leave; approval round 2). When `/api/jobs` cannot be read,
+  or the job runs scripts, every impulse output counts.
 - **Impulse outputs** (`onoff` sub-type `dto`, impulse or staircase timer;
   telling them apart needs `GET /devices/<id>/config`, which puts the device
   in configuration mode: not done): never a switch nor a light (a garage door
@@ -212,6 +215,11 @@ up to date at the end of every milestone.
   kept across reconnections to Gladys, and told in the status (minor 6); the
   ids of the created devices cached, refreshed on their events (minor 9); a
   new address clears what was published for the previous gateway (minor 11).
+- **Approval round 2** (minor): the empty Discovery published at once after
+  a change of address; 10 slots a second always left to the presses during a
+  flood of states; a form saved with the old, invalidated token while a
+  claimed token is unsaved keeps the token in memory (a token typed by the
+  user wins).
 - **Version 0.1.0 set by hand** in `package.json`, `package-lock.json` and the
   manifest (with the `docker_image` tag
   `ghcr.io/lm1lc3n7/gladys-wiser-feller:0.1.0`): the one-time exception to
