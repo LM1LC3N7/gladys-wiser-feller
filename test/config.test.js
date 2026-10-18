@@ -1,33 +1,49 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeConfig, DEFAULT_CONFIG } from '../src/config.js';
+import { DEFAULTS, normalizeConfig, parseGatewayAddress } from '../src/config.js';
 
-test('normalizeConfig returns the defaults when called with no argument', () => {
-  assert.deepEqual(normalizeConfig(), DEFAULT_CONFIG);
+test('the address of the µGateway', () => {
+  assert.deepEqual(parseGatewayAddress('192.168.1.20'), {
+    url: 'http://192.168.1.20',
+    host: '192.168.1.20',
+  });
+  assert.equal(parseGatewayAddress(' http://192.168.1.20/ ').url, 'http://192.168.1.20');
+  assert.equal(parseGatewayAddress('http://192.168.1.20/api').url, 'http://192.168.1.20');
+  assert.equal(parseGatewayAddress('192.168.1.20:8080').url, 'http://192.168.1.20:8080');
+  assert.equal(parseGatewayAddress('').error, 'empty');
+  assert.equal(parseGatewayAddress('https://192.168.1.20').error, 'https');
+  assert.equal(parseGatewayAddress('ftp://192.168.1.20').error, 'invalid');
+  assert.equal(parseGatewayAddress('http://u:p@192.168.1.20').error, 'credentials');
+  assert.equal(parseGatewayAddress('http://192.168.1.20/api/loads').error, 'path');
+  assert.equal(parseGatewayAddress('http://192.168.1.20/?x=1').error, 'path');
+  assert.equal(parseGatewayAddress('wiser.local').error, 'local-name');
+  assert.equal(parseGatewayAddress('http://[::1').error, 'invalid');
 });
 
-test('normalizeConfig keeps user values over the defaults', () => {
-  const config = normalizeConfig({ latitude: 45.5, longitude: -73.6, unit: 'fahrenheit' });
-  assert.equal(config.latitude, 45.5);
-  assert.equal(config.longitude, -73.6);
-  assert.equal(config.unit, 'fahrenheit');
-});
-
-test('normalizeConfig coerces numeric strings coming from a form', () => {
-  const config = normalizeConfig({ latitude: '48.8', longitude: '2.3', poll_frequency: '600' });
-  assert.equal(config.latitude, 48.8);
-  assert.equal(config.longitude, 2.3);
-  assert.equal(config.poll_frequency, 600);
-  assert.equal(typeof config.poll_frequency, 'number');
-});
-
-test('normalizeConfig falls back to the default for a missing numeric field', () => {
-  const config = normalizeConfig({ unit: 'celsius' });
-  assert.equal(config.poll_frequency, DEFAULT_CONFIG.poll_frequency);
-});
-
-test('GLADYS_PREFER_LOCAL defaults to true and only an explicit false disables it', () => {
-  assert.equal(normalizeConfig().GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: true }).GLADYS_PREFER_LOCAL, true);
-  assert.equal(normalizeConfig({ GLADYS_PREFER_LOCAL: false }).GLADYS_PREFER_LOCAL, false);
+test('the configuration, normalized', () => {
+  const c = normalizeConfig({ gateway_address: '192.168.1.20', api_token: ' abc-123-def ' });
+  assert.equal(c.error, undefined);
+  assert.equal(c.token, 'abc-123-def');
+  assert.equal(c.live, true);
+  assert.equal(c.pollInterval, 30);
+  assert.equal(c.importUser, 'admin');
+  assert.equal(c.allowImpulse, false, 'impulse outputs off by default');
+  assert.equal(normalizeConfig({ gateway_address: '192.168.1.20' }).error, 'no-token');
+  assert.equal(
+    normalizeConfig({ gateway_address: '192.168.1.20', api_token: 'a b' }).error,
+    'bad-token',
+  );
+  const bounded = normalizeConfig({
+    ...DEFAULTS,
+    gateway_address: '1.2.3.4',
+    api_token: 'x',
+    poll_interval: 1,
+    import_user: 'root',
+    allow_impulse_outputs: 'true',
+    live_updates: 'false',
+  });
+  assert.equal(bounded.pollInterval, 10);
+  assert.equal(bounded.importUser, 'admin');
+  assert.equal(bounded.allowImpulse, true);
+  assert.equal(bounded.live, false);
 });

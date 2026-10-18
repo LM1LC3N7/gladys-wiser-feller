@@ -1,67 +1,129 @@
-# Template de démonstration
+# Wiser by Feller
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Cette intégration relie Gladys à **votre µGateway Wiser by Feller** par son
+**API locale officielle**, et propose les sorties de votre installation dans
+l'onglet **Découverte** de Gladys : lumières, variateurs, prises commandées,
+stores, volets et stores bannes, ainsi que vos **scènes Wiser** et les **appuis
+sur les boutons** enregistrés sur le µGateway. Une fois un appareil ajouté, son
+état suit le µGateway **en direct**, et Gladys le pilote à travers lui. Tout
+reste sur votre réseau local : aucun cloud. Non officiel, sans lien avec Feller
+AG.
+
+> **Version de développement (0.1).** Écrite à partir de la documentation de
+> l'API de Feller et de la bibliothèque aiowiserbyfeller, et testée contre un
+> µGateway simulé : module **jamais testé avec un vrai µGateway** pour
+> l'instant. Vos retours sont les bienvenus sur le dépôt GitHub.
 
 ## Ce que vous obtenez
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+| Sortie Wiser                               | Dans Gladys                                                                 |
+| ------------------------------------------ | --------------------------------------------------------------------------- |
+| Interrupteur (lumière)                     | une lumière : allumage                                                      |
+| Variateur (LED, DALI)                      | une lumière : allumage et luminosité (0-100 %)                              |
+| Interrupteur réglé en « prise » dans l'app | un interrupteur : marche/arrêt                                              |
+| Store à lamelles                           | un volet : ouvrir, fermer, arrêter, position, et **lamelles** (0-100 %)     |
+| Volet roulant, moteur                      | un volet : ouvrir, fermer, arrêter, position                                |
+| Store banne                                | un rideau : ouvrir, fermer, arrêter, position                               |
+| Moteur à relais simple                     | un volet : ouvrir, fermer, arrêter (sans position)                          |
+| Sortie à impulsion ou minuterie d'escalier | un état en lecture seule et un bouton « Activer », **désactivé par défaut** |
+| Scène Wiser                                | un bouton « Lancer » : la scène s'exécute comme depuis l'app                |
+| Bouton enregistré sur le µGateway          | un bouton : chaque appui arrive à vos scènes Gladys                         |
 
-## Configuration
+Les stores et volets ne sont **jamais** des interrupteurs : une scène « tout
+éteindre » ne les ferme pas. La position suit la convention de Gladys :
+100 % = ouvert, 0 % = fermé. Pendant qu'un moteur apprend ses fins de course
+(calibrage), sa position est inconnue et n'est pas envoyée.
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+Les appareils sont nommés d'après le nom de la sortie et sa pièce dans l'app
+Wiser (« Plafonnier (Salon) »). Leur identifiant suit l'adresse physique de la
+sortie (module et canal) : il ne change pas si le µGateway renumérote ses
+sorties. Les sorties de chauffage (HVAC), les couleurs et la température de
+blanc des DALI ne sont pas encore pilotées.
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+### Boutons et déclencheurs de scène
 
-## Actions
+Le µGateway (génération B, micrologiciel 6.0.41 ou plus récent) envoie les
+appuis des boutons **enregistrés** (« managed buttons ») par son WebSocket.
+Chaque bouton enregistré devient un appareil Gladys dont la fonctionnalité
+« Appui » prend une valeur par appui : appui court, appui long, relâché, en
+distinguant haut/bas et marche/arrêt sur une bascule. Utilisez-la comme
+déclencheur « Changement d'état d'un appareil » dans une scène. Deux appuis de
+suite donnent deux événements. Gladys n'enregistre pas de bouton elle-même (ce
+serait modifier la configuration du µGateway) : enregistrez-les par l'API du
+µGateway (`POST /api/buttons`) ou un outil qui le fait, puis cliquez sur
+**Scanner** dans l'onglet Découverte. Les µGateway de génération A n'envoient
+pas ces appuis.
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+## Prérequis
 
-## Scènes
+- Un µGateway Wiser by Feller sur le même réseau local que Gladys, avec son
+  adresse IP (de préférence fixe, réservée dans votre box).
+- Un accès physique au µGateway pour appuyer sur l'un de ses boutons une fois,
+  au moment d'obtenir le jeton.
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+## Installation
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+1. Dans Gladys, ouvrez l'intégration **Wiser by Feller**, onglet
+   **Configuration**.
+2. Saisissez l'**adresse IP** du µGateway (par exemple `192.168.1.20`) et
+   enregistrez.
+3. Cliquez sur **Obtenir le jeton**. Les boutons du µGateway clignotent pendant
+   30 secondes : **appuyez sur l'un d'eux**. Le jeton est enregistré tout seul
+   dans le champ « Jeton du µGateway » et Gladys se connecte.
+4. Ouvrez l'onglet **Découverte** et ajoutez les appareils voulus.
 
-## Tableau de bord
+Le bouton n'envoie **qu'une demande par clic**, jamais en boucle. Sans appui
+dans les 30 s, rien ne change : cliquez à nouveau. Chaque nouveau jeton remplace
+le précédent (le µGateway invalide l'ancien).
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+Le jeton du compte « gladys » part d'une copie du compte Wiser choisi dans
+« Compte Wiser à recopier » (`admin`, celui de l'app Wiser Home, par défaut) :
+noms, pièces et scènes viennent de lui.
+
+## Options
+
+- **Mises à jour en direct** (activé par défaut) : Gladys écoute le WebSocket du
+  µGateway ; les états suivent en une seconde et les appuis sur les boutons
+  arrivent. Les états sont aussi relus toutes les 5 minutes, et la liste des
+  sorties, scènes et boutons toutes les 30 minutes (ou avec **Scanner** dans
+  l'onglet Découverte).
+- **Intervalle de lecture** (30 s par défaut, 10 à 3600 s) : sans le direct
+  (désactivé ou perdu), les états sont lus à ce rythme.
+- **Autoriser les sorties à impulsion et minuterie** (désactivé par défaut) :
+  une sortie « impulsion » ou « minuterie d'escalier » commande souvent un
+  ouvre-porte de garage ou une gâche. Tant que l'option est désactivée, son
+  bouton « Activer » est refusé, et l'option est relue juste avant chaque
+  envoi. Deux impulsions sont espacées d'au moins 3 secondes.
+- **Langue des noms des fonctionnalités** : français ou anglais.
+
+## Sécurité et vie privée
+
+- Le jeton est **gardé par Gladys dans sa base, jamais réaffiché, et envoyé
+  seulement à l'adresse saisie** (en en-tête `Authorization`). Il n'apparaît
+  jamais dans les journaux. Les redirections ne sont jamais suivies.
+- Un jeton refusé par le µGateway n'est **jamais réessayé automatiquement**,
+  même après un redémarrage : Gladys attend que vous obteniez un nouveau jeton
+  ou cliquiez sur **Tester la connexion**.
+- Une demande « 429 » du µGateway met tout en pause (1 minute à 6 heures).
+- Les commandes partent une par une par sortie, dans les 3,5 s, ou sont
+  refusées. Une commande qui a pu partir sans réponse est annoncée « envoyée,
+  sans confirmation » et la sortie est relue.
 
 ## Dépannage
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+- **« Le µGateway a refusé le jeton »** : cliquez sur **Obtenir le jeton** et
+  appuyez sur un bouton du µGateway.
+- **« Injoignable »** : vérifiez l'adresse IP (pas de nom en `.local`, que le
+  conteneur ne résout pas) et que le µGateway est sous tension.
+- **Pas de mises à jour en direct** : les états sont lus à l'intervalle choisi ;
+  le badge de l'appareil l'indique par un point orange.
+- **Tester la connexion** affiche le modèle, le micrologiciel, le nombre de
+  sorties, de scènes et de boutons enregistrés, et l'état du direct.
+
+## Crédits
+
+Logique portée de [aiowiserbyfeller](https://github.com/Syonix/aiowiserbyfeller)
+(Apache-2.0) et de l'intégration Home Assistant
+[ha-wiser-by-feller](https://github.com/Syonix/ha-wiser-by-feller) (Apache-2.0),
+d'après la documentation de l'API publiée par Feller AG. Wiser by Feller est
+une marque de Feller AG ; ce projet est sans lien avec Feller AG.

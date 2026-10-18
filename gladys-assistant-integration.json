@@ -1,177 +1,163 @@
 {
   "manifest_version": 1,
   "type": "device",
-  "name": "Demo Devices Template",
+  "name": "Wiser by Feller",
   "description": {
-    "en": "Starter template showing sensors, a switch, a dimmable light and a smart plug.",
-    "fr": "Template de démarrage : capteurs, interrupteur, lampe variable et prise connectée."
+    "en": "Wiser by Feller lights, dimmers, blinds and scenes, through the µGateway. Unofficial.",
+    "fr": "Lumières, variateurs, stores et scènes Wiser by Feller, par le µGateway. Non officiel."
   },
-  "version": "1.0.0",
-  "docker_image": "ghcr.io/gladysassistant/integration-template-js:1.0.0",
+  "version": "0.1.0",
+  "docker_image": "ghcr.io/lm1lc3n7/gladys-wiser-feller:0.1.0",
   "gladys_version": ">=5.1.0",
-  "cover_image": "https://raw.githubusercontent.com/GladysAssistant/integration-template-js/master/cover.png",
-  "categories": ["lighting", "security", "environment"],
-  "transports": ["local", "cloud"],
+  "cover_image": "https://raw.githubusercontent.com/LM1LC3N7/gladys-wiser-feller/main/cover.png",
+  "categories": ["lighting", "protocols"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
       "type": "section",
-      "label": { "en": "Getting started", "fr": "Pour commencer" },
+      "label": {
+        "en": "Your Wiser by Feller installation in Gladys",
+        "fr": "Votre installation Wiser by Feller dans Gladys"
+      },
       "description": {
-        "en": "The demo weather station reads real data from the free Open-Meteo API: pick the coordinates to observe. No account, no API key.",
-        "fr": "La station météo de démonstration lit de vraies données via l'API gratuite Open-Meteo : choisissez les coordonnées à observer. Pas de compte, pas de clé d'API."
+        "en": "The outputs of your Wiser µGateway are offered in the Discovery tab: lights (on/off, brightness), switched outlets, blinds and shutters (position, slats of venetian blinds), awnings, your Wiser scenes as buttons, and the presses of the buttons registered on the µGateway. Everything stays on your local network, through the official API of the µGateway, with live updates. Impulse and staircase-timer outputs stay read-only until you allow them below. Never tested with a real µGateway yet. Unofficial, not affiliated with Feller AG.",
+        "fr": "Les sorties de votre µGateway Wiser sont proposées dans l'onglet Découverte : lumières (allumage, luminosité), prises commandées, stores et volets (position, lamelles des stores à lamelles), stores bannes, vos scènes Wiser en boutons, et les appuis sur les boutons enregistrés sur le µGateway. Tout reste sur votre réseau local, par l'API officielle du µGateway, avec des mises à jour en direct. Les sorties à impulsion et minuterie restent en lecture seule tant que vous ne les autorisez pas ci-dessous. Jamais testée avec un vrai µGateway pour l'instant. Non officiel, sans lien avec Feller AG."
       },
       "links": [
         {
-          "url": "https://open-meteo.com/en/docs",
-          "label": { "en": "Open-Meteo documentation", "fr": "Documentation Open-Meteo" }
+          "url": "https://github.com/LM1LC3N7/gladys-wiser-feller/blob/main/docs/fr.md",
+          "label": { "en": "Guide (French)", "fr": "Guide (français)" }
+        },
+        {
+          "url": "https://github.com/LM1LC3N7/gladys-wiser-feller/blob/main/docs/en.md",
+          "label": { "en": "Guide (English)", "fr": "Guide (anglais)" }
+        },
+        {
+          "url": "https://github.com/Feller-AG/wiser-tutorial",
+          "label": {
+            "en": "Feller's API tutorial",
+            "fr": "Le tutoriel de l'API de Feller (anglais)"
+          }
         }
       ]
     },
     {
-      "key": "latitude",
-      "type": "number",
-      "label": { "en": "Latitude", "fr": "Latitude" },
+      "key": "gateway_address",
+      "type": "string",
+      "label": { "en": "Address of the µGateway", "fr": "Adresse du µGateway" },
       "description": {
-        "en": "Latitude used for the demo weather sensor.",
-        "fr": "Latitude utilisée par le capteur météo de démonstration."
+        "en": "The local IP address of your Wiser µGateway, like 192.168.1.20 (shown in the Wiser Home app, or in your router). The token is sent to this address only.",
+        "fr": "L'adresse IP locale de votre µGateway Wiser, par exemple 192.168.1.20 (visible dans l'app Wiser Home, ou dans votre box). Le jeton est envoyé à cette adresse seulement."
       },
-      "placeholder": { "en": "e.g. 48.8566", "fr": "ex. 48.8566" },
-      "required": true,
-      "default": 48.8566,
-      "min": -90,
-      "max": 90
+      "placeholder": { "en": "192.168.1.20", "fr": "192.168.1.20" },
+      "required": true
     },
     {
-      "key": "longitude",
-      "type": "number",
-      "label": { "en": "Longitude", "fr": "Longitude" },
+      "key": "api_token",
+      "type": "secret",
+      "label": { "en": "Token of the µGateway", "fr": "Jeton du µGateway" },
       "description": {
-        "en": "Longitude used for the demo weather sensor.",
-        "fr": "Longitude utilisée par le capteur météo de démonstration."
+        "en": "Filled in by the \"Get the token\" button below: save the address first, click the button, then press any button of the µGateway within 30 seconds while they blink. Kept by Gladys in its database, never shown again, and sent only to the address above.",
+        "fr": "Rempli par le bouton « Obtenir le jeton » ci-dessous : enregistrez d'abord l'adresse, cliquez sur le bouton, puis appuyez sur n'importe quel bouton du µGateway dans les 30 secondes pendant qu'ils clignotent. Gardé par Gladys dans sa base, jamais réaffiché, et envoyé seulement à l'adresse ci-dessus."
       },
-      "placeholder": { "en": "e.g. 2.3522", "fr": "ex. 2.3522" },
-      "required": true,
-      "default": 2.3522,
-      "min": -180,
-      "max": 180
+      "required": false
     },
     {
-      "key": "unit",
+      "key": "import_user",
       "type": "select",
-      "label": { "en": "Temperature unit", "fr": "Unité de température" },
+      "label": {
+        "en": "Wiser account to copy",
+        "fr": "Compte Wiser à recopier"
+      },
+      "description": {
+        "en": "Names, rooms and scenes belong to a Wiser account: the token of Gladys starts as a copy of this one when you get it. \"admin\" is the account of the Wiser Home app.",
+        "fr": "Noms, pièces et scènes appartiennent à un compte Wiser : le jeton de Gladys part d'une copie de celui-ci quand vous l'obtenez. « admin » est le compte de l'app Wiser Home."
+      },
       "required": false,
-      "default": "celsius",
+      "default": "admin",
       "options": [
-        { "value": "celsius", "label": { "en": "Celsius", "fr": "Celsius" } },
-        { "value": "fahrenheit", "label": { "en": "Fahrenheit", "fr": "Fahrenheit" } }
+        {
+          "value": "admin",
+          "label": { "en": "admin (Wiser Home app)", "fr": "admin (app Wiser Home)" }
+        },
+        {
+          "value": "installer",
+          "label": { "en": "installer (Wiser eSetup app)", "fr": "installer (app Wiser eSetup)" }
+        },
+        { "value": "enduser", "label": { "en": "enduser", "fr": "enduser" } }
       ]
     },
     {
-      "key": "poll_frequency",
-      "type": "number",
-      "label": { "en": "Refresh interval (s)", "fr": "Intervalle de rafraîchissement (s)" },
+      "key": "live_updates",
+      "type": "boolean",
+      "label": { "en": "Live updates", "fr": "Mises à jour en direct" },
       "description": {
-        "en": "How often sensors are polled, in seconds (one minute minimum).",
-        "fr": "Fréquence d'interrogation des capteurs, en secondes (une minute minimum)."
+        "en": "Listens to the WebSocket of the µGateway: the states follow within a second and the button presses reach your scenes. Off: the states are read at the interval below and the presses are not seen.",
+        "fr": "Écoute le WebSocket du µGateway : les états suivent en une seconde et les appuis sur les boutons arrivent à vos scènes. Désactivé : les états sont lus à l'intervalle ci-dessous et les appuis ne sont pas vus."
       },
       "required": false,
-      "default": 300,
-      "min": 60,
+      "default": true
+    },
+    {
+      "key": "poll_interval",
+      "type": "number",
+      "label": {
+        "en": "Read interval without live updates (s)",
+        "fr": "Intervalle de lecture sans mises à jour en direct (s)"
+      },
+      "description": {
+        "en": "How often the states are read when the live updates are off or lost (10 to 3600 s). With them, every 5 minutes.",
+        "fr": "Fréquence de lecture des états quand les mises à jour en direct sont désactivées ou perdues (10 à 3600 s). Avec elles, toutes les 5 minutes."
+      },
+      "required": false,
+      "default": 30,
+      "min": 10,
       "max": 3600
+    },
+    {
+      "key": "language",
+      "type": "select",
+      "label": {
+        "en": "Language of the feature names",
+        "fr": "Langue des noms des fonctionnalités"
+      },
+      "description": {
+        "en": "Used for the names of the features of the devices added from now on.",
+        "fr": "Sert aux noms des fonctionnalités des appareils ajoutés désormais."
+      },
+      "required": false,
+      "default": "fr",
+      "options": [
+        { "value": "fr", "label": { "en": "French", "fr": "Français" } },
+        { "value": "en", "label": { "en": "English", "fr": "Anglais" } }
+      ]
+    },
+    {
+      "key": "allow_impulse_outputs",
+      "type": "boolean",
+      "label": {
+        "en": "Allow impulse and timer outputs",
+        "fr": "Autoriser les sorties à impulsion et minuterie"
+      },
+      "description": {
+        "en": "Off by default: impulse and staircase-timer outputs (a garage door opener is often wired to one) are read-only. On, their \"Activate\" button sends a press, from the dashboard and the scenes.",
+        "fr": "Désactivé par défaut : les sorties à impulsion et minuterie (un ouvre-porte de garage y est souvent branché) sont en lecture seule. Activé, leur bouton « Activer » envoie un appui, depuis le tableau de bord et les scènes."
+      },
+      "required": false,
+      "default": false
     }
   ],
   "actions": [
     {
-      "key": "test_weather",
-      "label": { "en": "Test the weather provider", "fr": "Tester le fournisseur météo" },
-      "timeout_seconds": 30
+      "key": "claim_token",
+      "label": { "en": "Get the token", "fr": "Obtenir le jeton" },
+      "timeout_seconds": 90
     },
     {
-      "key": "identify",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ]
-    }
-  ],
-  "scene_triggers": [
-    {
-      "key": "motion_detected",
-      "label": { "en": "Motion detected", "fr": "Mouvement détecté" },
-      "description": {
-        "en": "A demo motion sensor saw a person or an animal move.",
-        "fr": "Un détecteur de démonstration a vu bouger une personne ou un animal."
-      },
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Sensor", "fr": "Détecteur" }
-        },
-        {
-          "key": "target",
-          "type": "multi_select",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" },
-          "options": [
-            { "value": "person", "label": { "en": "Person", "fr": "Personne" } },
-            { "value": "animal", "label": { "en": "Animal", "fr": "Animal" } }
-          ]
-        }
-      ],
-      "variables": [
-        {
-          "key": "target",
-          "type": "string",
-          "label": { "en": "What moved", "fr": "Ce qui a bougé" }
-        }
-      ]
-    }
-  ],
-  "scene_actions": [
-    {
-      "key": "identify_device",
-      "label": { "en": "Identify a device", "fr": "Identifier un appareil" },
-      "description": {
-        "en": "Make a device signal itself (the demo light blinks).",
-        "fr": "Fait se signaler un appareil (la lampe de démonstration clignote)."
-      },
-      "timeout_seconds": 15,
-      "fields": [
-        {
-          "key": "device",
-          "type": "select",
-          "source": "devices",
-          "label": { "en": "Device", "fr": "Appareil" },
-          "required": true
-        }
-      ],
-      "outputs": [
-        {
-          "key": "signalled",
-          "type": "boolean",
-          "label": { "en": "Device signalled", "fr": "Appareil signalé" }
-        }
-      ]
-    }
-  ],
-  "widgets": [
-    {
-      "key": "demo_status",
-      "label": { "en": "Demo status", "fr": "État de la démo" },
-      "description": {
-        "en": "Live temperature and plug power, plug connection and observed location.",
-        "fr": "Température et puissance en direct, connexion de la prise, position observée."
-      },
-      "icon": "activity",
-      "action_timeout_seconds": 15
+      "key": "test_connection",
+      "label": { "en": "Test the connection", "fr": "Tester la connexion" },
+      "timeout_seconds": 60
     }
   ]
 }

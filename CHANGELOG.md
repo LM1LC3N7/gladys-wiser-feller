@@ -12,44 +12,28 @@ the notes of the version's GitHub Release.
 
 ### Added
 
-- A working example of scene triggers, scene actions and dashboard widgets
-  (Gladys 5.1.0 or later).
-- `CHANGELOG.md`, rolled by the Release workflow.
-- A GitHub Release for every version, with its changelog section as notes: the
-  Gladys Supervision page links each version to the repository's releases.
-- CI runs the tests on Node 22 and 24, and builds the Docker image.
-- Dependabot keeps the npm dependencies and the GitHub Actions up to date.
-- `SECURITY.md` (how to report a vulnerability) and `CLAUDE.md` (project rules
-  for contributors and coding assistants).
-- Manifest tests: `version` matches `package.json`, `docker_image` is tagged
-  with it, descriptions hold 10 to 100 characters, placeholders are
-  multi-language objects.
-- The latitude and longitude fields show an example value as placeholder.
+- The outputs of a Wiser by Feller µGateway, offered in the Discovery tab:
+  lights (on/off), dimmers and DALI lights (brightness), switched outlets,
+  venetian blinds (position and slats), roller shutters and motors
+  (position), awnings (as curtains), relay motors (open, close, stop). Blinds
+  are never switches.
+- Wiser scenes as "Run" buttons (the job of the scene), and the presses of the
+  buttons registered on the µGateway as button events (short, long, release;
+  up/down and on/off told apart), usable as scene triggers.
+- A "Get the token" button: one claim per click, the µGateway answering once
+  one of its buttons is pressed; the token saved in the secret field, sent
+  only to the address typed, never logged.
+- Live updates through the WebSocket of the µGateway, the states read again
+  every 5 minutes and the inventory every 30 minutes; reads at a configurable
+  pace without the socket; a watchdog that reopens a deaf socket.
+- Commands one at a time per output, sent within 3.5 s or refused; a command
+  that may have left without an answer is told "sent, without confirmation"
+  and read back.
+- Impulse and staircase-timer outputs read-only by default, with an option to
+  allow their "Activate" button (read again when the request leaves, 3 s
+  between two impulses).
+- A refused token is never tried again automatically, even after a restart;
+  a 429 pauses every path; both kept in `/data`.
+- Transport badges, a "Test the connection" button, English and French texts.
 
-### Changed
-
-- Node.js 22 or later is required (Node 20 is end-of-life).
-- Integration SDK 0.15.0. The tests now run against the fake Gladys of the
-  SDK, which refuses the payloads Gladys refuses.
-- The refresh interval is one minute minimum, the fastest Gladys polls a
-  device. The plug's power is only sent when it changes, and every 30
-  minutes otherwise.
-
-### Fixed
-
-- Gladys refused the devices of the Discovery tab: the weather station and
-  the plug declared their poll frequency in seconds instead of one of the
-  values Gladys accepts, and were never polled. They now poll every minute,
-  and the readings follow the refresh interval of the configuration.
-
-- The release commit no longer fails `npm run format:check`: the Release
-  workflow updates the manifest `version` and `docker_image` in place instead
-  of re-printing the whole file with `jq`.
-- The integration can write to `/data`: the image creates the directory owned
-  by the `node` user, a new Docker volume was owned by root.
-- A sub-container running the integration's own image follows it to the new
-  tag at each release, as well as in the manifest of the build summary: it kept
-  the previous tag, which may not exist on the registry. Sub-containers on a
-  third-party image (a broker, a database...) keep theirs.
-
-[Unreleased]: https://github.com/GladysAssistant/integration-template-js/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-wiser-feller/commits/main

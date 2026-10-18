@@ -1,45 +1,108 @@
 // -----------------------------------------------------------------------------
-// Integration configuration.
-//
-// The configuration is filled in by the user in Gladys, from the `config_schema`
-// declared in `gladys-assistant-integration.json`. The SDK fetches it for you
-// (`gladys.getConfig()`) and notifies you of every change through
-// `gladys.onConfigUpdated()`.
-//
-// This module only provides defaults and normalizes the received object, so the
-// rest of the code never has to deal with `undefined`.
+// The configuration of the manifest `config_schema`, normalized.
 // -----------------------------------------------------------------------------
 
-// Defaults: they MUST stay consistent with the `default` values declared in the
-// `config_schema` of the manifest.
-export const DEFAULT_CONFIG = {
-  latitude: 48.8566, // Paris
-  longitude: 2.3522,
-  unit: 'celsius', // 'celsius' | 'fahrenheit'
-  // Seconds between two reads of the polled sensors. Gladys polls at most once
-  // a minute: slower intervals are applied by skipping polls (see
-  // createPoller in src/devices/index.js).
-  poll_frequency: 300,
-  // Reserved key (NOT in config_schema): because the manifest declares both
-  // 'local' and 'cloud' in its `transports` field, Gladys shows a standard
-  // "Prefer the local connection" toggle and sends the user's choice here.
-  // Read-only for the integration; defaults to true.
-  GLADYS_PREFER_LOCAL: true,
+import { IMPORT_USERS, LANGUAGES, POLL_INTERVAL } from './constants.js';
+
+/** Defaults, mirrored by the manifest (checked by test/manifest.test.js). */
+export const DEFAULTS = {
+  gateway_address: '',
+  api_token: '',
+  import_user: 'admin',
+  live_updates: true,
+  poll_interval: POLL_INTERVAL.default,
+  language: 'fr',
+  allow_impulse_outputs: false,
 };
 
 /**
- * Merge the user config with the defaults.
- * @param {Record<string, unknown>} raw config returned by the SDK
+ * The base address of the µGateway from what the user typed: "192.168.1.20",
+ * "http://192.168.1.20/" or "http://192.168.1.20/api".
+ * @returns {{ url: string, host: string } | { error: 'empty'|'invalid'|'https'|'credentials'|'path'|'local-name' }}
+ */
+export function parseGatewayAddress(raw) {
+  const text = String(raw ?? '').trim();
+  if (text === '') {
+    return { error: 'empty' };
+  }
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(text) ? text : `http://${text}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    return { error: 'invalid' };
+  }
+  if (url.protocol === 'https:') {
+    // The µGateway API is served over plain HTTP on the local network only.
+    return { error: 'https' };
+  }
+  if (url.protocol !== 'http:' || !url.hostname) {
+    return { error: 'invalid' };
+  }
+  if (url.username || url.password) {
+    return { error: 'credentials' };
+  }
+  if (!/^\/(api\/?)?$/i.test(url.pathname) || url.search || url.hash) {
+    // The token goes to this exact host and nowhere else: no path, no query.
+    return { error: 'path' };
+  }
+  if (/\.local$/i.test(url.hostname)) {
+    // mDNS names do not resolve in the container (bridge network).
+    return { error: 'local-name' };
+  }
+  return { url: url.origin, host: url.host };
+}
+
+const bounded = (raw, { min, max, default: fallback }) => {
+  const n = Number(raw);
+  return raw !== '' && raw !== null && Number.isFinite(n)
+    ? Math.max(min, Math.min(max, n))
+    : fallback;
+};
+
+export const bool = (raw, fallback) => {
+  if (typeof raw === 'boolean') {
+    return raw;
+  }
+  if (raw === 'true' || raw === 1 || raw === '1') {
+    return true;
+  }
+  if (raw === 'false' || raw === 0 || raw === '0') {
+    return false;
+  }
+  return fallback;
+};
+
+/**
+ * @returns {{ url?: string, host?: string, token: string, error?: string,
+ *   importUser: string, live: boolean, pollInterval: number, language: 'fr'|'en',
+ *   allowImpulse: boolean }}
  */
 export function normalizeConfig(raw = {}) {
+  const given = Object.fromEntries(
+    Object.entries(raw ?? {}).filter(([, v]) => v !== null && v !== undefined && v !== ''),
+  );
+  const c = { ...DEFAULTS, ...given };
+  const target = parseGatewayAddress(c.gateway_address);
+  const token = String(c.api_token ?? '').trim();
+  let error = target.error;
+  if (!error && token === '') {
+    error = 'no-token';
+  }
+  if (!error && /[\s\r\n]/.test(token)) {
+    error = 'bad-token';
+  }
   return {
-    ...DEFAULT_CONFIG,
-    ...raw,
-    // Force the types: config may arrive as strings from a form.
-    latitude: Number(raw.latitude ?? DEFAULT_CONFIG.latitude),
-    longitude: Number(raw.longitude ?? DEFAULT_CONFIG.longitude),
-    poll_frequency: Number(raw.poll_frequency ?? DEFAULT_CONFIG.poll_frequency),
-    // The preference is a boolean; anything but an explicit false means true.
-    GLADYS_PREFER_LOCAL: raw.GLADYS_PREFER_LOCAL !== false,
+    url: target.url,
+    host: target.host,
+    token,
+    error,
+    importUser: IMPORT_USERS.includes(c.import_user) ? c.import_user : DEFAULTS.import_user,
+    live: bool(c.live_updates, DEFAULTS.live_updates),
+    pollInterval: Math.round(bounded(c.poll_interval, POLL_INTERVAL)),
+    language: LANGUAGES.includes(c.language) ? c.language : DEFAULTS.language,
+    // Impulse and staircase-timer outputs stay read-only unless allowed (a
+    // garage door opener is often wired to an impulse output).
+    allowImpulse: bool(c.allow_impulse_outputs, false),
   };
 }
