@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-18
+
 ### Added
 
 - The outputs of a Wiser by Feller µGateway, offered in the Discovery tab:
@@ -65,4 +67,5 @@ the notes of the version's GitHub Release.
   keep a share of the state budget; an unsaved claimed token survives a save
   of the form that still holds the old one.
 
-[Unreleased]: https://github.com/LM1LC3N7/gladys-wiser-feller/commits/main
+[Unreleased]: https://github.com/LM1LC3N7/gladys-wiser-feller/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-wiser-feller/releases/tag/v0.1.1
