@@ -1,6 +1,6 @@
 {
   "name": "gladys-wiser-feller",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Gladys Assistant external integration for Wiser by Feller installations, through the local API of the µGateway. Unofficial, not affiliated with Feller AG.",
   "type": "module",
